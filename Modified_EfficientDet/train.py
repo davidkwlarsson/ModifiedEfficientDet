@@ -22,9 +22,9 @@ import tensorflow as tf
 import json
 import glob
 import skimage.io as io
-from skimage.transform import resize 
 import numpy as np
 from PIL import Image
+import matplotlib.pyplot as plt
 
 
 
@@ -38,6 +38,8 @@ from tensorflow.compat.v1.keras.preprocessing.image import ImageDataGenerator
 
 from network import efficientdet
 from efficientnet import BASE_WEIGHTS_PATH, WEIGHTS_HASHES
+from generator import projectPoints, json_load, _assert_exist
+from losses import focal_loss
 
 tf.compat.v1.disable_eager_execution()
 
@@ -81,35 +83,34 @@ def trainGenerator(dir_path):
     for (img, heat) in train_generator:
         yield (img, heat)
 
+def save_preds(dir_path, predictions):
+    #Function that saves away the predictions as jpg images.
+    save_path = dir_path + "predictions/test"
+    makedirs(save_path)
+    print("Saving the predictions to " + save_path)
+    predictions *= 255
+    for i, pred in enumerate(predictions):
+        name = save_path + str(i)+".jpg"
+        io.imsave(name, pred.astype(np.uint8))
 
+# class custom_Generator(keras.utils.Sequence):
+#     def __init__(self, list_IDs, labels, batch_size=32, dim=(32,32,32), shuffle=True):
+#         'Initialization'
+#         self.dim = dim
+#         self.batch_size = batch_size
+#         self.labels = labels
+#         self.list_IDs = list_IDs
+#         self.shuffle = shuffle
+#         self.on_epoch_end()
 
-def create_generators(dir_path):
-    # create random transform generator for augmenting training data
-    train_datagen = ImageDataGenerator(rescale = 1./255)
+#     def __len__(self):
+#         return int(np.floor(len(self.labels)/self.batch_size))
+        
+#     def __getitem__(self, index):
+        
     
-    # CREATE A NEW GENERAL DATAGENERATOR
 
-    # val_datagen = ImageDataGenerator(rescale = 1./255)
-
-    
-    seed = 1
-    
-    image_generator = train_datagen.flow_from_directory(os.path.join(dir_path, 'training/rgb'),
-                                        target_size = (224, 224, 3),
-                                        class_mode = None,
-                                        seed = seed)
-    # validation_generator = val_datagen.flow_from_directory(os.path.join(dir_path,'evaluation\rgb'),
-    #                                     target_size = (224,224,3),
-    #                                     class_mode = None)
-
-    coord_generator = train_datagen.flow_from_directory(os.path.join(dir_path, 'training/heatmaps'),
-                                        target_size = (224, 224),
-                                        class_mode = None,
-                                        seed = seed)
-    
-    return image_generator # + coord_generator
-
-def get_trainData(dir_path, num_samples = 100):
+def get_trainData(dir_path, num_samples = 100, multi_dim = True):
     print("Collecting data ... \n")
     imgs = []
     heats = []
@@ -122,13 +123,29 @@ def get_trainData(dir_path, num_samples = 100):
             n = 0
             break
 
-    heat_path = os.path.join(dir_path, 'training/heatmaps')
-    for f in os.listdir(heat_path):
-        heats.append(io.imread(os.path.join(heat_path, f)))
-        n += 1
-        if n > num_samples:
-            n = 0
-            break
+    if multi_dim:
+        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))
+        K_list = json_load(os.path.join(dir_path, 'training_K.json'))
+        heats = list()
+        for i in range(len(xyz_list[:1000])):
+            uv = projectPoints(xyz_list[i], K_list[i])
+            temp_im = np.zeros((224,224,21))
+        # img = list()
+            for j,coord in enumerate(uv):
+            # temp_im = np.zeros((224,224))
+                temp_im[int(coord[0]), int(coord[1]),j] = 255
+            heats.append(temp_im)
+            if i > num_samples-1:
+                break
+        
+    else:
+        heat_path = os.path.join(dir_path, 'training/heatmaps')
+        for f in os.listdir(heat_path):
+            heats.append(io.imread(os.path.join(heat_path, f)))
+            n += 1
+            if n > num_samples:
+                n = 0
+                break
 
     return np.array(imgs), np.array(heats)
     # image_names = glob.glob(os.path.join(dir_path, 'training/rgb/*.jpg'))
@@ -139,13 +156,15 @@ def get_trainData(dir_path, num_samples = 100):
 def main():
     dir_path = sys.argv[1]
     phi = 0
+    cont_training = False
     weighted_bifpn = True
     freeze_backbone = False
     tf.compat.v1.keras.backend.set_session(get_session())
+    
 
     # create the generators
     # train_generator = trainGenerator(dir_path)
-    images, heatmaps = get_trainData(dir_path)
+    images, heatmaps = get_trainData(dir_path,multi_dim=True)
     print("Number of images: %s and heatmaps: %s\n" %(len(images), len(heatmaps)))
     model = efficientdet(phi, weighted_bifpn=weighted_bifpn,
                             freeze_bn=freeze_backbone)
@@ -170,9 +189,9 @@ def main():
     # compile model
     print("Compiling model ... \n")
     model.compile(optimizer=Adam(lr=1e-3),
-                    loss='binary_crossentropy')
+                    loss=[focal_loss(gamma = 2, alpha = 0.25)])
 
-    # print(model.summary())
+    print(model.summary())
 
     # start training
     # return model.fit_generator(
@@ -183,8 +202,24 @@ def main():
     #     verbose=1
         # validation_data=validation_generator
     # )
-    model.fit(images, heatmaps, batch_size = 16, epochs = 10, verbose = 1)
-    model.save('efficientdet.h5', save_format='tf')
+    if cont_training:
+        model.load_weights('efficientdet')
+        model.fit(images, heatmaps, batch_size = 16, epochs = 200, verbose = 1)
+    else:
+        model.fit(images, heatmaps, batch_size = 16, epochs = 20, verbose = 1)
+    # model.save_weights('efficientdet')
+    preds = model.predict(images[0:3])
+    # save_preds(dir_path, preds)
+
+    fig = plt.figure()
+
+    plt.subplot(1, 2, 1)
+    plt.imshow(preds[0][:,:,0])
+
+    plt.subplot(1, 2, 2)
+    plt.imshow(heatmaps[0][:,:,0])
+
+    plt.show()
 
 
 if __name__ == '__main__':

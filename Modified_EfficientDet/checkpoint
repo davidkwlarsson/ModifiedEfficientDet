@@ -1,0 +1,2 @@
+model_checkpoint_path: "efficientdet"
+all_model_checkpoint_paths: "efficientdet"
