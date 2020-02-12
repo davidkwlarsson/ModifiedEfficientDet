@@ -1,2 +1,2 @@
-model_checkpoint_path: "efficientdet"
-all_model_checkpoint_paths: "efficientdet"
+model_checkpoint_path: "efficientdet2"
+all_model_checkpoint_paths: "efficientdet2"
