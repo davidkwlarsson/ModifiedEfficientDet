@@ -204,8 +204,10 @@ def efficientdet(phi, num_classes=20, weighted_bifpn=False, freeze_bn=False, sco
     feature1 = layers.UpSampling2D()(feature2)
     feature1 = layers.Conv2D(32, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature1)
     feature = layers.UpSampling2D()(feature1)
-    feature = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'linear')(feature)
+    feature = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'sigmoid')(feature)
     # feature = layers.Reshape((224,224))(feature)
+
+    ### TRY WITH SOFTMAX FOR CATEGORICAL
 
     
     # regression = regress_head(feature3)
