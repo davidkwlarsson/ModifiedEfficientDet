@@ -19,6 +19,7 @@ from datetime import date
 import os
 import sys
 import tensorflow as tf
+# import tensorflow_addons as tfa
 import json
 import glob
 import skimage.io as io
@@ -30,18 +31,21 @@ import matplotlib.pyplot as plt
 
 
 
-from tensorflow import keras
+# from tensorflow import keras
 # import tensorflow.keras.backend as K
 from tensorflow.compat.v1.keras import backend as K
-from tensorflow.keras.optimizers import Adam, SGD
+from tensorflow.compat.v1.keras.optimizers import Adam, SGD
+from tensorflow.keras.losses import Reduction
 from tensorflow.compat.v1.keras.preprocessing.image import ImageDataGenerator
 
 from network import efficientdet
 from efficientnet import BASE_WEIGHTS_PATH, WEIGHTS_HASHES
 from generator import projectPoints, json_load, _assert_exist
-from losses import focal_loss
+from losses import categorical_focal_loss
+from tensorflow_addons.losses import SigmoidFocalCrossEntropy
 
 tf.compat.v1.disable_eager_execution()
+os.environ["CUDA_VISIBLE_DEVICES"]="0"
 
 def makedirs(path):
     # Intended behavior: try to create the directory,
@@ -110,7 +114,7 @@ def save_preds(dir_path, predictions):
         
     
 
-def get_trainData(dir_path, num_samples = 100, multi_dim = True):
+def get_trainData(dir_path, num_samples = 300, multi_dim = True):
     print("Collecting data ... \n")
     imgs = []
     heats = []
@@ -133,7 +137,7 @@ def get_trainData(dir_path, num_samples = 100, multi_dim = True):
         # img = list()
             for j,coord in enumerate(uv):
             # temp_im = np.zeros((224,224))
-                temp_im[int(coord[0]), int(coord[1]),j] = 255
+                temp_im[int(coord[0]), int(coord[1]),j] = 1
             heats.append(temp_im)
             if i > num_samples-1:
                 break
@@ -147,7 +151,7 @@ def get_trainData(dir_path, num_samples = 100, multi_dim = True):
                 n = 0
                 break
 
-    return np.array(imgs), np.array(heats)
+    return np.array(imgs)/255, np.array(heats)
     # image_names = glob.glob(os.path.join(dir_path, 'training/rgb/*.jpg'))
     # heatmaps_names = glob.glob(os.path.join(dir_path, 'training/heatmaps/*.jpg'))
 
@@ -160,6 +164,7 @@ def main():
     weighted_bifpn = True
     freeze_backbone = False
     tf.compat.v1.keras.backend.set_session(get_session())
+    
     
 
     # create the generators
@@ -188,10 +193,20 @@ def main():
 
     # compile model
     print("Compiling model ... \n")
-    model.compile(optimizer=Adam(lr=1e-3),
-                    loss=[focal_loss(gamma = 2, alpha = 0.25)])
+    # # SOFTMAX ACTIVATION
+    # model.compile(optimizer=Adam(lr=1e-3),
+    #                 loss=[categorical_focal_loss(gamma = 2, alpha = 0.25)])
+    
+    # SIGMOID ACTIVATION
+    focalloss = SigmoidFocalCrossEntropy(reduction=Reduction.SUM_OVER_BATCH_SIZE)
+    model.compile(optimizer = Adam(lr=1e-3),
+                    loss = focalloss)
 
-    print(model.summary())
+    # # LINEAR ACTIVATION
+    # model.compile(optimizer=Adam(lr=1e-3),
+    #                 loss='mean_absolute_error')
+
+    # print(model.summary())
 
     # start training
     # return model.fit_generator(
@@ -202,25 +217,30 @@ def main():
     #     verbose=1
         # validation_data=validation_generator
     # )
+
+    ## 'efficientdet' for the first stacked heatmaps
     if cont_training:
-        model.load_weights('efficientdet')
-        model.fit(images, heatmaps, batch_size = 16, epochs = 200, verbose = 1)
+        model.load_weights('efficientdet2')
+        model.fit(images, heatmaps, batch_size = 16, epochs = 60, verbose = 1)
     else:
-        model.fit(images, heatmaps, batch_size = 16, epochs = 20, verbose = 1)
-    # model.save_weights('efficientdet')
+        model.fit(images, heatmaps, batch_size = 16, epochs = 10, verbose = 1)
+    model.save_weights('efficientdet2')
     preds = model.predict(images[0:3])
     # save_preds(dir_path, preds)
 
-    fig = plt.figure()
+    # fig = plt.figure()
 
     plt.subplot(1, 2, 1)
-    plt.imshow(preds[0][:,:,0])
+    plt.imshow(np.sum(preds[0],axis = -1))
+    
 
     plt.subplot(1, 2, 2)
-    plt.imshow(heatmaps[0][:,:,0])
+    plt.imshow(np.sum(heatmaps[0], axis = -1))
 
     plt.show()
+    plt.savefig("testres.png")
 
 
 if __name__ == '__main__':
+    # with tf.device('/gpu:0'):
     main()
