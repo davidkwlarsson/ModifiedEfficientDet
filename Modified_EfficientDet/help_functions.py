@@ -1,3 +1,5 @@
+import sys
+
 import numpy as np
 import matplotlib.pyplot as plt
 from utils.fh_utils import *
@@ -62,7 +64,7 @@ def read_img(idx, base_path, set_name, version=None):
 def heatmaps_to_coord(heatmaps):
     coords = [[] for x in range(len(heatmaps))]
     for j in range(len(heatmaps)):
-        for i in range(20):
+        for i in range(21):
             ind = np.unravel_index(np.argmax(heatmaps[j][:, :, i], axis=None), heatmaps[j][:, :, i].shape)
             coords[j].append(ind[0])
             coords[j].append(ind[1])
@@ -85,7 +87,7 @@ def create_gaussian_hm(uv, w, h):
             for y in range(radius * 2 + 1):
                 dist = math.sqrt((x - xc) ** 2 + (y - yc) ** 2)
                 if dist < 5:
-                    std = 1
+                    std = 2
                     scale = 1  # otherwise predict only zeros
                     hm_small[x][y] = scale * math.exp(-dist ** 2 / (2 * std ** 2)) / (std * math.sqrt(2 * math.pi))
         # plt.imshow(hm_small)
@@ -193,3 +195,92 @@ def plot_predicted_coordinates(images, coord_preds, coord):
         plt.savefig('scatter.png')
     except:
         print('Error in scatter plot')
+
+
+def keypoint_connections():
+    connection_dict = dict()
+    for i in range(21):
+        connection_dict[i] = list()
+        if i in [5, 9, 13, 17]:
+            connection_dict[i].append(0)
+        elif i == 0:
+            connection_dict[i].append(1)
+            connection_dict[i].append(5)
+            connection_dict[i].append(9)
+            connection_dict[i].append(13)
+            connection_dict[i].append(17)
+        else:
+            connection_dict[i].append(i-1)
+        if i not in [0, 4, 8, 12, 16, 20]:
+            connection_dict[i].append(i + 1)
+
+    return connection_dict
+
+
+import tensorflow as tf
+def build_connections(features):
+    x = tf.ones((224, 224, 21))
+
+    init_op = tf.initialize_all_variables()
+
+    with tf.Session() as sess:
+        sess.run(init_op)  # execute init_op
+        # print the random values that we sample
+        print(sess.run(features[1]))
+
+
+from tensorflow.keras import layers
+from tensorflow.compat.v1.keras import backend as K
+
+class ConnectKeypointLayer(layers.Layer):
+
+    def __init__(self, output_dim, **kwargs):
+        super(ConnectKeypointLayer, self).__init__(**kwargs)
+        self.output_dim = output_dim
+        self.conv2 = tf.keras.layers.Conv2D(32, (1, 1), padding='same', activation='relu')
+        self.conv2a = list()
+        self.conv2b = list()
+        for i in range(21):
+            #TODO: How about activation here?
+            self.conv2a.append(tf.keras.layers.Conv2D(32, (1, 1), padding='same', activation='relu'))
+            self.conv2b.append(tf.keras.layers.Conv2D(32, (3, 3), padding='same', activation='relu'))
+
+
+
+    def build(self, input_shape):
+        # Create a trainable weight variable for this layer.
+        self.W = list()
+        for i in range(21):
+            self.W.append(self.add_weight(name='kernel',
+                                     shape=[int(input_shape[-1]),
+                                      self.output_dim],
+                                      #initializer='uniform',
+                                     trainable=True))
+        print(input_shape[1])
+        print(self.output_dim)
+        self.built = True
+
+    def call(self, input):
+        f = list()
+        fn = list()
+        c_dict = keypoint_connections()
+        for i in range(21):
+            f.append(self.conv2(input))
+        for i in range(21):
+            c = list()
+            c.append(f[i])
+
+            for j in c_dict[i]:
+                c.append(f[j])
+
+            c = K.concatenate(tuple(c), axis=-1)
+            h = self.conv2a[i](c)
+            g = self.conv2b[i](h)
+            l = K.dot(input, self.W[i])
+            #print(l.shape)
+            fn.append(K.sum(K.concatenate((f[i], l), axis=-1), axis=-1, keepdims=True))
+
+        return K.concatenate(tuple(fn), axis=-1)
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], self.output_dim)
