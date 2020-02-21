@@ -188,18 +188,22 @@ def get_evalImages(dir_path, num_samples):
 
 def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
     if data_set == 'training':
-        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))
+        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[:-300]
         xyz_list *= 4
         num_samples = len(xyz_list) # - 300 # MINUS THE SAMPLES IN VALIDATION SET
         print("Total number of training samples: ", num_samples)
-        K_list = json_load(os.path.join(dir_path, 'training_K.json'))
+        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[:-300]
         K_list *= 4
+        indicies = [i for i in range(32000)] + [i for i in range(32560,64564)] + [i for i in range(65120,97120)] + [i for i in range(97680,129680)]
 
     elif data_set == 'validation':
         xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-300:]
+        xyz_list *= 4
         num_samples = len(xyz_list)
         print("Total number of evaluation samples: ", num_samples)
         K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-300:]
+        K_list *= 4
+        indicies = [i for i in range(32000,32560)] + [i for i in range(64564,65120)] + [i for i in range(97120, 97680)] + [i for i in range(129680,130240)]
 
     elif data_set == 'evaluation':
         xyz_list = json_load(os.path.join(dir_path, 'evaluation_xyz.json'))
@@ -217,9 +221,10 @@ def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
         batch_x = []
         batch_y = [[], [], [], []]
         for j in range(batch_size):
-            img = read_img(i+j, dir_path, data_set)
+            idx = indicies[i+j]
+            img = read_img(idx, dir_path, 'training')
             uv = projectPoints(xyz_list[i+j], K_list[i+j])
-            # depthmaps = get_depthmaps(uv, xyz_list[i+j])
+            # depthmaps = get_depthmaps(uv, xyz_list[idx])
             depth = get_depth(xyz_list[i+j])
             onehots = create_onehot(uv, 56,56)
             batch_x.append(img)
@@ -365,7 +370,7 @@ def draw_3d_skeleton(pose_cam_xyz, image_size):
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
     # ax.view_init(elev=-85, azim=-75)
-    pickle.dump(fig, open('3DHands.fig.pickle', 'wb'))
+    # pickle.dump(fig, open('3DHands.fig.pickle', 'wb'))
     plt.savefig('hands_3D.png')
 
     # ret = fig2data(fig)  # H x W x 4
