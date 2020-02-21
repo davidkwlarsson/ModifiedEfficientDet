@@ -1,12 +1,18 @@
+import os
 import sys
+import pickle
+import matplotlib
+import math
 
 import numpy as np
-import matplotlib.pyplot as plt
 from utils.fh_utils import *
 import skimage.io as io
-import math
 from generator import projectPoints, json_load, _assert_exist
-import os
+
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+from mpl_toolkits.mplot3d import Axes3D
+
 
 
 def plot_heatmaps_with_coords(images, heatmaps, coords):
@@ -71,24 +77,34 @@ def heatmaps_to_coord(heatmaps):
 
     return np.array(coords)
 
+def get_depthmaps(uv,xyz_list):
+    depths = np.zeros((224,224,21))
+    xyz = np.array(xyz_list)
+    for j,coord in enumerate(uv):
+        try:
+            depths[int(coord[0]),int(coord[1]),j] = xyz[j, 2]
+        except:
+            print("\n")
+
+    return depths
 
 
 def create_gaussian_hm(uv, w, h):
     # TODO: Hantera kantfallen också
     hm_list = list()
     im = np.zeros((w, h))
+    std = 100
     for coord in uv:
         u = coord[1]
         v = coord[0]
-        radius = 20
+        radius = 30
         hm_small = np.zeros((radius * 2 + 1, radius * 2 + 1))
         xc, yc = (radius + 1, radius + 1)
         for x in range(radius * 2 + 1):
             for y in range(radius * 2 + 1):
                 dist = math.sqrt((x - xc) ** 2 + (y - yc) ** 2)
-                if dist < 5:
-                    std = 2
-                    scale = 1  # otherwise predict only zeros
+                if dist < 30:
+                    scale = 10  # otherwise predict only zeros
                     hm_small[x][y] = scale * math.exp(-dist ** 2 / (2 * std ** 2)) / (std * math.sqrt(2 * math.pi))
         # plt.imshow(hm_small)
         # plt.show()
@@ -106,11 +122,36 @@ def create_gaussian_hm(uv, w, h):
     # plt.show()
     return np.transpose(np.array(hm_list), (1, 2, 0))
 
+def create_onehot(uv, w, h):
+    heats = list()
+    temp_im = np.zeros((w,h,21))
+    temp_im2 = np.zeros((w*2,h*2,21))
+    temp_im3 = np.zeros((w*4,h*4,21))
+        # img = list()
+    for j,coord in enumerate(uv):
+            # temp_im = np.zeros((224,224))
+        try: 
+            temp_im[int(coord[0]/4), int(coord[1]/4),j] = 1
+            temp_im2[int(coord[0]/2), int(coord[1]/2),j] = 1
+            temp_im3[int(coord[0]), int(coord[1]),j] = 1
+        except:
+            print("\n Coordinates where out of range : " , coord[0], coord[1])
+    return temp_im, temp_im2, temp_im3
+
+def get_depth(xyz_list):
+    depth = np.zeros(21)
+    xyz = np.array(xyz_list)
+    for j in range(21):
+        depth[j] = xyz[j, 2]
+    return depth
+
 
 def get_trainData(dir_path, num_samples, multi_dim = True):
     print("Collecting data ... \n")
     imgs = []
     heats = []
+    heats2 = []
+    heats3 = []
     coords = []
     xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))
     K_list = json_load(os.path.join(dir_path, 'training_K.json'))
@@ -120,36 +161,81 @@ def get_trainData(dir_path, num_samples, multi_dim = True):
         imgs.append(img)
         # project 3d coords and create heatmaps
         uv = projectPoints(xyz_list[i], K_list[i])
-        heats.append(create_gaussian_hm(uv,224,224))
+        # heats.append(create_gaussian_hm(uv,56,56))
+        onehots = create_onehot(uv, 56,56)
+        heats.append(onehots[0])
+        heats2.append(onehots[1])
+        heats3.append(onehots[2])
         coords.append([])
         for j,coord in enumerate(uv):
             # save coordinates
             coords[i].append(coord[0])
             coords[i].append(coord[1])
 
-    return np.array(imgs), np.array(heats), np.array(coords)
+    return np.array(imgs), np.array(heats), np.array(heats2), np.array(heats3), np.array(coords)
 
 
-def trainGenerator(dir_path):
-    image_datagen = ImageDataGenerator(rescale = 1./255)
-    heat_datagen = ImageDataGenerator(rescale = 1)#"./255)
-    batch_size = 32
-    seed = 1
-    image_generator = image_datagen.flow_from_directory(os.path.join(dir_path, 'training/rgb'),
-                                        target_size = (224, 224, 3),
-                                        class_mode = None,
-                                        batch_size = batch_size,
-                                        seed = seed)
+def get_evalImages(dir_path, num_samples):
+    print("Collecting data evaluation data ... \n")
+    imgs = []
+    for i in range(num_samples):
+        # load images
+        img = read_img(i, dir_path, 'evaluation')
+        imgs.append(img)
 
-    heat_generator = heat_datagen.flow_from_directory(os.path.join(dir_path, 'training/heatmaps'),
-                                        target_size = (224, 224),
-                                        class_mode = None,
-                                        batch_size = batch_size,
-                                        seed = seed)
+    return np.array(imgs)
 
-    train_generator = zip(image_generator, heat_generator)
-    for (img, heat) in train_generator:
-        yield (img, heat)
+
+def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
+    if data_set == 'training':
+        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))
+        xyz_list *= 4
+        num_samples = len(xyz_list) # - 300 # MINUS THE SAMPLES IN VALIDATION SET
+        print("Total number of training samples: ", num_samples)
+        K_list = json_load(os.path.join(dir_path, 'training_K.json'))
+        K_list *= 4
+
+    elif data_set == 'validation':
+        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-300:]
+        num_samples = len(xyz_list)
+        print("Total number of evaluation samples: ", num_samples)
+        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-300:]
+
+    elif data_set == 'evaluation':
+        xyz_list = json_load(os.path.join(dir_path, 'evaluation_xyz.json'))
+        num_samples = len(xyz_list)
+        print("Total number of evaluation samples: ", num_samples)
+        K_list = json_load(os.path.join(dir_path, 'evaluation_K.json'))
+
+    else:
+        print("No specified data found!")
+        sys.exit()
+        
+
+    i = 0
+    while True:
+        batch_x = []
+        batch_y = [[], [], [], []]
+        for j in range(batch_size):
+            img = read_img(i+j, dir_path, data_set)
+            uv = projectPoints(xyz_list[i+j], K_list[i+j])
+            # depthmaps = get_depthmaps(uv, xyz_list[i+j])
+            depth = get_depth(xyz_list[i+j])
+            onehots = create_onehot(uv, 56,56)
+            batch_x.append(img)
+            batch_y[0].append(onehots[0])
+            batch_y[1].append(onehots[1])
+            batch_y[2].append(onehots[2])
+            # batch_y[3].append(depthmaps)
+            batch_y[3].append(depth)
+            if i+j == num_samples-1:
+                i = -j
+        i += batch_size
+
+        yield (np.array(batch_x), batch_y)
+
+
+
 
 def save_preds(dir_path, predictions):
     #Function that saves away the predictions as jpg images.
@@ -197,90 +283,109 @@ def plot_predicted_coordinates(images, coord_preds, coord):
         print('Error in scatter plot')
 
 
-def keypoint_connections():
-    connection_dict = dict()
-    for i in range(21):
-        connection_dict[i] = list()
-        if i in [5, 9, 13, 17]:
-            connection_dict[i].append(0)
-        elif i == 0:
-            connection_dict[i].append(1)
-            connection_dict[i].append(5)
-            connection_dict[i].append(9)
-            connection_dict[i].append(13)
-            connection_dict[i].append(17)
+
+def plot_predicted_hands(images, coord_preds):
+    fig = plt.figure(figsize=(8, 8))
+    columns = 5
+    rows = 2
+    for i in range(1, columns * rows + 1):
+        ax = fig.add_subplot(rows, columns, i)
+        plt.imshow(images[i - 1])
+        # need to project onto image..
+        one_pred = [coord_preds[i-1][0::2], coord_preds[i-1][1::2]]
+        plot_hand(ax, np.transpose(np.array(one_pred)))
+
+    plt.show()
+    plt.savefig('hands.png')
+
+
+
+def plot_predicted_hands_uv(images, coord_preds):
+    fig = plt.figure(figsize=(8, 8))
+    columns = 5
+    rows = 2
+    for i in range(1, columns * rows + 1):
+        ax = fig.add_subplot(rows, columns, i)
+        plt.imshow(images[i - 1])
+        # need to project onto image..
+        one_pred = [coord_preds[i-1][0::2], coord_preds[i-1][1::2]]
+        plot_hand(ax, np.transpose(np.array(one_pred)),order = 'uv')
+        
+    plt.show()
+    plt.savefig('hands_uv.png')
+
+
+def add_depth_to_coords(coords, depth):
+    xyz = [coords[0::2], coords[1::2], depth]
+    return np.array(xyz).T
+
+
+
+
+### FOLLOWING CODE IS TAKEN FROM https://github.com/3d-hand-shape/hand-graph-cnn/blob/master/hand_shape_pose/util/vis.py
+
+color_hand_joints = [[1.0, 0.0, 0.0],
+                     [0.0, 0.4, 0.0], [0.0, 0.6, 0.0], [0.0, 0.8, 0.0], [0.0, 1.0, 0.0],  # thumb
+                     [0.0, 0.0, 0.6], [0.0, 0.0, 1.0], [0.2, 0.2, 1.0], [0.4, 0.4, 1.0],  # index
+                     [0.0, 0.4, 0.4], [0.0, 0.6, 0.6], [0.0, 0.8, 0.8], [0.0, 1.0, 1.0],  # middle
+                     [0.4, 0.4, 0.0], [0.6, 0.6, 0.0], [0.8, 0.8, 0.0], [1.0, 1.0, 0.0],  # ring
+                     [0.4, 0.0, 0.4], [0.6, 0.0, 0.6], [0.8, 0.0, 0.8], [1.0, 0.0, 1.0]]  # little
+
+
+def draw_3d_skeleton(pose_cam_xyz, image_size):
+    """
+    :param pose_cam_xyz: 21 x 3
+    :param image_size: H, W
+    :return:
+    """
+    assert pose_cam_xyz.shape[0] == 21
+
+    fig = plt.figure()
+    fig.set_size_inches(float(image_size[0]) / fig.dpi, float(image_size[1]) / fig.dpi, forward=True)
+
+    ax = plt.subplot(111, projection='3d')
+    marker_sz = 15
+    line_wd = 2
+
+    for joint_ind in range(pose_cam_xyz.shape[0]):
+        ax.plot(pose_cam_xyz[joint_ind:joint_ind + 1, 0], pose_cam_xyz[joint_ind:joint_ind + 1, 1],
+                pose_cam_xyz[joint_ind:joint_ind + 1, 2], '.', c=color_hand_joints[joint_ind], markersize=marker_sz)
+        if joint_ind == 0:
+            continue
+        elif joint_ind % 4 == 1:
+            ax.plot(pose_cam_xyz[[0, joint_ind], 0], pose_cam_xyz[[0, joint_ind], 1], pose_cam_xyz[[0, joint_ind], 2],
+                    color=color_hand_joints[joint_ind], lineWidth=line_wd)
         else:
-            connection_dict[i].append(i-1)
-        if i not in [0, 4, 8, 12, 16, 20]:
-            connection_dict[i].append(i + 1)
-
-    return connection_dict
+            ax.plot(pose_cam_xyz[[joint_ind - 1, joint_ind], 0], pose_cam_xyz[[joint_ind - 1, joint_ind], 1],
+                    pose_cam_xyz[[joint_ind - 1, joint_ind], 2], color=color_hand_joints[joint_ind],
+                    linewidth=line_wd)
 
 
-import tensorflow as tf
-def build_connections(features):
-    x = tf.ones((224, 224, 21))
+    ax.set_xlabel('X')
+    ax.set_ylabel('Y')
+    ax.set_zlabel('Z')
+    # ax.view_init(elev=-85, azim=-75)
+    pickle.dump(fig, open('3DHands.fig.pickle', 'wb'))
+    plt.savefig('hands_3D.png')
 
-    init_op = tf.initialize_all_variables()
+    # ret = fig2data(fig)  # H x W x 4
+    plt.close(fig)
+    # return ret
 
-    with tf.Session() as sess:
-        sess.run(init_op)  # execute init_op
-        # print the random values that we sample
-        print(sess.run(features[1]))
+# def fig2data(fig):
+#     """
+#     @brief Convert a Matplotlib figure to a 4D numpy array with RGBA channels and return it
+#     @param fig a matplotlib figure
+#     @return a numpy 3D array of RGBA values
+#     """
+#     # draw the renderer
+#     fig.canvas.draw()
 
+#     # Get the RGBA buffer from the figure
+#     w, h = fig.canvas.get_width_height()
+#     buf = np.fromstring(fig.canvas.tostring_argb(), dtype=np.uint8)
+#     buf.shape = (w, h, 4)
 
-from tensorflow.keras import layers
-from tensorflow.compat.v1.keras import backend as K
-
-class ConnectKeypointLayer(layers.Layer):
-
-    def __init__(self, output_dim, **kwargs):
-        super(ConnectKeypointLayer, self).__init__(**kwargs)
-        self.output_dim = output_dim
-        self.conv2 = tf.keras.layers.Conv2D(32, (1, 1), padding='same', activation='relu')
-        self.conv2a = list()
-        self.conv2b = list()
-        for i in range(21):
-            #TODO: How about activation here?
-            self.conv2a.append(tf.keras.layers.Conv2D(32, (1, 1), padding='same', activation='relu'))
-            self.conv2b.append(tf.keras.layers.Conv2D(32, (3, 3), padding='same', activation='relu'))
-
-
-
-    def build(self, input_shape):
-        # Create a trainable weight variable for this layer.
-        self.W = list()
-        for i in range(21):
-            self.W.append(self.add_weight(name='kernel',
-                                     shape=[int(input_shape[-1]),
-                                      self.output_dim],
-                                      #initializer='uniform',
-                                     trainable=True))
-        print(input_shape[1])
-        print(self.output_dim)
-        self.built = True
-
-    def call(self, input):
-        f = list()
-        fn = list()
-        c_dict = keypoint_connections()
-        for i in range(21):
-            f.append(self.conv2(input))
-        for i in range(21):
-            c = list()
-            c.append(f[i])
-
-            for j in c_dict[i]:
-                c.append(f[j])
-
-            c = K.concatenate(tuple(c), axis=-1)
-            h = self.conv2a[i](c)
-            g = self.conv2b[i](h)
-            l = K.dot(input, self.W[i])
-            #print(l.shape)
-            fn.append(K.sum(K.concatenate((f[i], l), axis=-1), axis=-1, keepdims=True))
-
-        return K.concatenate(tuple(fn), axis=-1)
-
-    def compute_output_shape(self, input_shape):
-        return (input_shape[0], self.output_dim)
+#     # canvas.tostring_argb give pixmap in ARGB mode. Roll the ALPHA channel to have it in RGBA mode
+#     buf = np.roll(buf, 3, axis=2)
+#     return buf
