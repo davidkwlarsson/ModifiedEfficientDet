@@ -200,7 +200,7 @@ def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
         xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-300:]
         xyz_list *= 4
         num_samples = len(xyz_list)
-        print("Total number of evaluation samples: ", num_samples)
+        print("Total number of validation samples: ", num_samples)
         K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-300:]
         K_list *= 4
         indicies = [i for i in range(32000,32560)] + [i for i in range(64564,65120)] + [i for i in range(97120, 97680)] + [i for i in range(129680,130240)]
@@ -394,3 +394,5 @@ def draw_3d_skeleton(pose_cam_xyz, image_size):
 #     # canvas.tostring_argb give pixmap in ARGB mode. Roll the ALPHA channel to have it in RGBA mode
 #     buf = np.roll(buf, 3, axis=2)
 #     return buf
+
+

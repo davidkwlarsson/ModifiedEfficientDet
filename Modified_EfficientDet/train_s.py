@@ -21,6 +21,7 @@ import sys
 import tensorflow as tf
 import json
 import glob
+import itertools
 import skimage.io as io
 import numpy as np
 from PIL import Image
@@ -48,6 +49,7 @@ from losses import *
 tf.compat.v1.disable_eager_execution()
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' 
 
 
 def makedirs(path):
@@ -99,12 +101,11 @@ def main():
     weighted_bifpn = True
     freeze_backbone = False
     tf.compat.v1.keras.backend.set_session(get_session())
-    # tf.config.gpu.set_per_process_memory_growth(True)
 
     # images, heatmaps, heatmaps2,heatmaps3, coord = get_trainData(dir_path, 100, multi_dim=True)
 
     traingen = dataGenerator(dir_path, batch_size = 16, data_set = 'training')
-    validgen = dataGenerator(dir_path, batch_size=16, data_set = 'validation')
+    validgen = dataGenerator(dir_path, batch_size= 16, data_set = 'validation')
 
     # check if it looks good
     # plot_heatmaps_with_coords(images, heatmaps, coord)
@@ -131,7 +132,8 @@ def main():
     # lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0, 'depthmaps' : 1.0}
     # focalloss = SigmoidFocalCrossEntropy(reduction=Reduction.SUM_OVER_BATCH_SIZE)
     model.compile(optimizer = Adam(lr=1e-3),
-                    loss = losses, loss_weights = lossWeights)
+                    loss = losses, loss_weights = lossWeights,
+                    metrics = {'normalsize' : 'mse'})
     # model.compile(optimizer='adam', metrics=['accuracy'], loss=weighted_bce)
     # loss=tf.keras.losses.SigmoidFocalCrossEntropy())
     # loss=weighted_bce)
@@ -147,28 +149,48 @@ def main():
     # K.set_value(model.optimizer.learning_rate, 1e-5)
     # model.fit(images, heatmaps, batch_size = 16, epochs = 100, verbose = 1)
 
+    # callbacks = [
+    # keras.callbacks.ModelCheckpoint(
+    #     filepath='mymodel_{epoch}',
+    #     # Path where to save the model
+    #     # The two parameters below mean that we will overwrite
+    #     # the current checkpoint if and only if
+    #     # the `val_loss` score has improved.
+    #     save_best_only=True,
+    #     monitor='val_loss',
+    #     verbose=1)
+    #     ]
+
     model.fit(traingen, validation_data = validgen, validation_steps = 18
-                    ,steps_per_epoch = 100, epochs = 100)
+                    ,steps_per_epoch = 100, epochs = 20, verbose = 2)
 
     # model.save_weights('handposenet')
 
-    images = get_evalImages(dir_path, 10)
+    # images = get_evalImages(dir_path, 10)
 
     # (preds, preds2 ,preds3) = model.predict(images)
-    (preds, preds2 ,preds3, depth) = model.predict(images)
+
+    validgen2 = dataGenerator(dir_path, batch_size=10, data_set = 'validation')
+    validgen3 = dataGenerator(dir_path, batch_size=10, data_set = 'validation')
+    (preds, preds2 ,preds3, depth) = model.predict(validgen2, steps = 1)
+    (images, targets) = next(validgen3)
+    (heatmaps, heatmaps2, heatmaps3, depth) = targets
+
     # plot_acc_loss(history)
+
     
     # get coordinates from predictions
-    coord_preds = heatmaps_to_coord(preds)
+    coord_preds = heatmaps_to_coord(preds[:10])
+    coord = heatmaps_to_coord(heatmaps)
     # coord_upsamp = heatmaps_to_coord(preds2)
 
-    # plot_predicted_heatmaps(preds, heatmaps)
+    plot_predicted_heatmaps(preds, heatmaps)
     # plot_predicted_heatmaps(preds2, heatmaps2)
     plot_predicted_hands_uv(images, coord_preds*4)
 
     xyz_pred = add_depth_to_coords(coord_preds[0], depth[0])
     draw_3d_skeleton(xyz_pred, (224*2,224*2))
-    # plot_predicted_coordinates(images, coord_preds*4, coord)
+    plot_predicted_coordinates(images, coord_preds*4, coord)
     # plot_predicted_coordinates(images, coord_upsamp*2, coord)
 
 
