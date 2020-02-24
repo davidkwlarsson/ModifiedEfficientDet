@@ -170,10 +170,9 @@ def main():
 
     # (preds, preds2 ,preds3) = model.predict(images)
 
-    validgen2 = dataGenerator(dir_path, batch_size=10, data_set = 'validation')
-    validgen3 = dataGenerator(dir_path, batch_size=10, data_set = 'validation')
-    (preds, preds2 ,preds3, depth) = model.predict(validgen2, steps = 1)
-    (images, targets) = next(validgen3)
+    (images, targets) = next(validgen)
+    (preds, preds2 ,preds3, depth) = model.predict(images)
+    
     (heatmaps, heatmaps2, heatmaps3, depth) = targets
 
     # plot_acc_loss(history)
@@ -190,7 +189,7 @@ def main():
 
     xyz_pred = add_depth_to_coords(coord_preds[0], depth[0])
     draw_3d_skeleton(xyz_pred, (224*2,224*2))
-    plot_predicted_coordinates(images, coord_preds*4, coord)
+    plot_predicted_coordinates(images, coord_preds*4, coord*4)
     # plot_predicted_coordinates(images, coord_upsamp*2, coord)
 
 
