@@ -32,9 +32,9 @@ from help_functions import *
 
 from tensorflow import keras
 # import tensorflow.keras.backend as K
-from tensorflow.compat.v1.keras import backend as K
+from tensorflow.keras import backend as K
 from tensorflow.keras.optimizers import Adam, SGD
-from tensorflow.compat.v1.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
 # from tensorflow.keras.losses import Reduction
 # from tensorflow_addons.losses import SigmoidFocalCrossEntropy
 # from keras.optimizers import adam
@@ -104,8 +104,8 @@ def main():
 
     # images, heatmaps, heatmaps2,heatmaps3, coord = get_trainData(dir_path, 100, multi_dim=True)
 
-    traingen = dataGenerator(dir_path, batch_size = 16, data_set = 'training')
-    validgen = dataGenerator(dir_path, batch_size= 16, data_set = 'validation')
+    traingen = dataGenerator(dir_path, batch_size = 8, data_set = 'training')
+    validgen = dataGenerator(dir_path, batch_size= 8, data_set = 'validation')
 
     # check if it looks good
     # plot_heatmaps_with_coords(images, heatmaps, coord)
@@ -124,11 +124,11 @@ def main():
 
     # compile model
     print("Compiling model ... \n")
-    # losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce}
-    losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce, 'depth' : 'mean_squared_error'}
+    losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce}
+    # losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce, 'depth' : 'mean_squared_error'}
     # losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce, 'depthmaps' : 'mean_squared_error'}
-    # lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0}
-    lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0, 'depth' : 1.0}
+    lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0}
+    # lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0, 'depth' : 1.0}
     # lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0, 'depthmaps' : 1.0}
     # focalloss = SigmoidFocalCrossEntropy(reduction=Reduction.SUM_OVER_BATCH_SIZE)
     model.compile(optimizer = Adam(lr=1e-3),
@@ -162,24 +162,24 @@ def main():
     #     ]
 
     model.fit(traingen, validation_data = validgen, validation_steps = 18
-                    ,steps_per_epoch = 100, epochs = 20, verbose = 2)
+                    ,steps_per_epoch = 100, epochs = 5, verbose = 2)
 
     # model.save_weights('handposenet')
 
     # images = get_evalImages(dir_path, 10)
+    validgen2 = dataGenerator(dir_path, batch_size= 10, data_set = 'validation')
+    (images, targets) = next(validgen2)
 
-    # (preds, preds2 ,preds3) = model.predict(images)
-
-    (images, targets) = next(validgen)
-    (preds, preds2 ,preds3, depth) = model.predict(images)
+    (preds, preds2 ,preds3) = model.predict(images)
+    # (preds, preds2 ,preds3, depth) = model.predict(images)
     
-    (heatmaps, heatmaps2, heatmaps3, depth) = targets
+    (heatmaps, heatmaps2, heatmaps3) = targets
 
     # plot_acc_loss(history)
 
     
     # get coordinates from predictions
-    coord_preds = heatmaps_to_coord(preds[:10])
+    coord_preds = heatmaps_to_coord(preds)
     coord = heatmaps_to_coord(heatmaps)
     # coord_upsamp = heatmaps_to_coord(preds2)
 
@@ -187,8 +187,8 @@ def main():
     # plot_predicted_heatmaps(preds2, heatmaps2)
     plot_predicted_hands_uv(images, coord_preds*4)
 
-    xyz_pred = add_depth_to_coords(coord_preds[0], depth[0])
-    draw_3d_skeleton(xyz_pred, (224*2,224*2))
+    # xyz_pred = add_depth_to_coords(coord_preds[0], depth[0])
+    # draw_3d_skeleton(xyz_pred, (224*2,224*2))
     plot_predicted_coordinates(images, coord_preds*4, coord*4)
     # plot_predicted_coordinates(images, coord_upsamp*2, coord)
 
