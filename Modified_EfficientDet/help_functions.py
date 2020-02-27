@@ -5,11 +5,13 @@ import matplotlib
 import math
 
 import numpy as np
+from numpy import asarray
+from numpy import savetxt
 from utils.fh_utils import *
 import skimage.io as io
 from generator import projectPoints, json_load, _assert_exist
 
-matplotlib.use('Agg')
+# matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
@@ -188,23 +190,21 @@ def get_evalImages(dir_path, num_samples):
 
 def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
     if data_set == 'training':
-        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[:-300]
+        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[:-560]
         xyz_list *= 4
         num_samples = len(xyz_list) # - 300 # MINUS THE SAMPLES IN VALIDATION SET
         print("Total number of training samples: ", num_samples)
-        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[:-300]
+        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[:-560]
         K_list *= 4
-        indicies = [i for i in range(32000)] + [i for i in range(32560,64564)] + [i for i in range(65120,97120)] + [i for i in range(97680,129680)]
-
+        indicies = [i for i in range(31999)] + [i for i in range(32560,64563)] + [i for i in range(65120,97119)] + [i for i in range(97680,129679)]
     elif data_set == 'validation':
-        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-300:]
+        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-560:]
         xyz_list *= 4
         num_samples = len(xyz_list)
         print("Total number of validation samples: ", num_samples)
-        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-300:]
+        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-560:]
         K_list *= 4
-        indicies = [i for i in range(32000,32560)] + [i for i in range(64564,65120)] + [i for i in range(97120, 97680)] + [i for i in range(129680,130240)]
-
+        indicies = [i for i in range(31999,32560)] + [i for i in range(64563,65120)] + [i for i in range(97119, 97680)] + [i for i in range(129679,130240)]
     elif data_set == 'evaluation':
         xyz_list = json_load(os.path.join(dir_path, 'evaluation_xyz.json'))
         num_samples = len(xyz_list)
@@ -219,10 +219,10 @@ def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
     i = 0
     while True:
         batch_x = []
-        batch_y = [[], [], [], []]
+        batch_y = [[], [], []]
         for j in range(batch_size):
             idx = indicies[i+j]
-            img = read_img(idx, dir_path, 'training')
+            img = read_img(idx, dir_path, 'training')/255
             uv = projectPoints(xyz_list[i+j], K_list[i+j])
             # depthmaps = get_depthmaps(uv, xyz_list[idx])
             depth = get_depth(xyz_list[i+j])
@@ -232,7 +232,7 @@ def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
             batch_y[1].append(onehots[1])
             batch_y[2].append(onehots[2])
             # batch_y[3].append(depthmaps)
-            batch_y[3].append(depth)
+            # batch_y[3].append(depth)
             if i+j == num_samples-1:
                 i = -j
         i += batch_size
@@ -320,8 +320,15 @@ def plot_predicted_hands_uv(images, coord_preds):
     plt.savefig('hands_uv.png')
 
 
-def add_depth_to_coords(coords, depth):
-    xyz = [coords[0::2], coords[1::2], depth]
+def add_depth_to_coords(coords, depth, K):
+
+    ## Transform the x,y coordinates back to 3D using the intrinsic camera parameters, K
+    K = np.array(K)
+    x_coords = coords[0::2]*depth
+    y_coords = coords[1::2]*depth
+    uv_z = np.array([x_coords, y_coords, depth])
+    xyz = np.linalg.solve(K,uv_z)
+
     return np.array(xyz).T
 
 
@@ -369,13 +376,18 @@ def draw_3d_skeleton(pose_cam_xyz, image_size):
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
-    # ax.view_init(elev=-85, azim=-75)
     # pickle.dump(fig, open('3DHands.fig.pickle', 'wb'))
     plt.savefig('hands_3D.png')
 
     # ret = fig2data(fig)  # H x W x 4
-    plt.close(fig)
+    # plt.close(fig)
     # return ret
+
+    # figx = pickle.load(open('3DHands.fig.pickle', 'rb'))
+    # print(" Opening Pickle file --- ")
+    # figx.show() # Show the figure, edit it, etc.!
+    plt.show()
+
 
 # def fig2data(fig):
 #     """
@@ -396,3 +408,6 @@ def draw_3d_skeleton(pose_cam_xyz, image_size):
 #     return buf
 
 
+def save_xyz(pose_cam_xyz, image):
+    savetxt('pose_cam_xyz.csv',pose_cam_xyz, delimiter=',')
+    pickle.dump(image, open('hand_for_3d.fig.pickle', 'wb'))
