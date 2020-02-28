@@ -29,3 +29,12 @@ def categorical_focal_loss(gamma = 2., alpha = 0.25):
 
         return K.sum(loss)
     return cat_focal_loss_fixed
+
+
+
+def weighted_bce(y_true, y_pred):
+  weights = (y_true * 59.) + 1.
+  bce = K.binary_crossentropy(y_true, y_pred)
+  weighted_bce = K.mean(bce * weights)
+  return weighted_bce
+

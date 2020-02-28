@@ -104,7 +104,7 @@ def main():
     # images, heatmaps, heatmaps2,heatmaps3, coord = get_trainData(dir_path, 100, multi_dim=True)
 
     traingen = dataGenerator(dir_path, batch_size = 16, data_set = 'training')
-    validgen = dataGenerator(dir_path, batch_size=16, data_set = 'validation')
+    validgen = dataGenerator(dir_path, batch_size= 16, data_set = 'validation')
 
     # check if it looks good
     # plot_heatmaps_with_coords(images, heatmaps, coord)
@@ -124,11 +124,11 @@ def main():
     # compile model
     print("Compiling model ... \n")
     # losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce}
-    losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce, 'depth' : 'mean_squared_error'}
-    # losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce, 'depthmaps' : 'mean_squared_error'}
+    #losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce, 'depthmaps' : 'mean_squared_error'}
+    losses = {"normalsize" : 'mean_squared_error', "size2" : 'mean_squared_error', 'size3':'mean_squared_error'}#, 'multiply' : weighted_bce}
     # lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0}
-    lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0, 'depth' : 1.0}
-    # lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0, 'depthmaps' : 1.0}
+    lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0}#, 'multiply' : 1.0}
+    #lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0, 'depthmaps' : 1.0}
     # focalloss = SigmoidFocalCrossEntropy(reduction=Reduction.SUM_OVER_BATCH_SIZE)
     model.compile(optimizer = Adam(lr=1e-3),
                     loss = losses, loss_weights = lossWeights)
@@ -138,8 +138,8 @@ def main():
     # loss=tf.keras.losses.SigmoidFocalCrossEntropy())
     # loss=[focal_loss(gamma = 2, alpha = 0.25)])
     # loss = 'mean_absolute_error'
-    # print(model.summary())
-    print("Number of parameters in the model : " ,model.count_params())
+    print(model.summary())
+    print("Number of parameters in the model : ", model.count_params())
     # print(get_flops(model))
 
     # model.fit(images, {"normalsize" : heatmaps, "size2": heatmaps2, 'size3': heatmaps3},
@@ -148,27 +148,41 @@ def main():
     # model.fit(images, heatmaps, batch_size = 16, epochs = 100, verbose = 1)
 
     model.fit(traingen, validation_data = validgen, validation_steps = 18
-                    ,steps_per_epoch = 100, epochs = 100)
+                    ,steps_per_epoch = 100, epochs = 30, verbose=2)
 
     # model.save_weights('handposenet')
+    validgen2 = dataGenerator(dir_path, batch_size= 10, data_set = 'validation')
 
-    images = get_evalImages(dir_path, 10)
+    (images, targets) = next(validgen2)
 
-    # (preds, preds2 ,preds3) = model.predict(images)
-    (preds, preds2 ,preds3, depth) = model.predict(images)
+    (preds, preds2 ,preds3) = model.predict(images)
+    #(preds, preds2 ,preds3, depth) = model.predict(images)
     # plot_acc_loss(history)
     
     # get coordinates from predictions
     coord_preds = heatmaps_to_coord(preds)
-    # coord_upsamp = heatmaps_to_coord(preds2)
+    #epth_tarval = heatmaps_to_depth(targets[3])
+    #depth_predval = heatmaps_to_depth(depth)
 
-    # plot_predicted_heatmaps(preds, heatmaps)
-    # plot_predicted_heatmaps(preds2, heatmaps2)
+    coord = heatmaps_to_coord(targets[2])
+
+    plot_predicted_heatmaps(preds, targets[0])
+    #plot_predicted_depthmaps(depth)
+    #print("Predicted first depthmap")
+    #print(depth_tarval[0])
+    #print(depth_predval[0])
+
+
+    # Skeleton plot
     plot_predicted_hands_uv(images, coord_preds*4)
 
-    xyz_pred = add_depth_to_coords(coord_preds[0], depth[0])
-    draw_3d_skeleton(xyz_pred, (224*2,224*2))
-    # plot_predicted_coordinates(images, coord_preds*4, coord)
+
+
+    #xyz_pred = add_depth_to_coords(coord_preds[0], depth[0])
+    #draw_3d_skeleton(xyz_pred, (224*2,224*2))
+
+    # Scatter plot
+    plot_predicted_coordinates(images, coord_preds*4, coord)
     # plot_predicted_coordinates(images, coord_upsamp*2, coord)
 
 
@@ -177,4 +191,5 @@ def main():
 
 if __name__ == '__main__':
     tf.keras.backend.clear_session()
+   # use_multiprocessing = True
     main()

@@ -1,11 +1,12 @@
 from functools import reduce
+from tensorflow.compat.v1.keras import backend as K
 
 # from keras import layers
 # from keras import initializers
 # from keras import models
 # from keras_ import EfficientNetB0, EfficientNetB1, EfficientNetB2
 # from keras_ import EfficientNetB3, EfficientNetB4, EfficientNetB5, EfficientNetB6
-
+import tensorflow as tf
 from tensorflow.keras import layers
 from tensorflow.keras import initializers
 from tensorflow.keras import models
@@ -15,6 +16,7 @@ from tfkeras import EfficientNetB3, EfficientNetB4, EfficientNetB5, EfficientNet
 from layers import ClipBoxes, RegressBoxes, FilterDetections, wBiFPNAdd, BatchNormalization
 from initializers import PriorProbability
 from keypointconnector import *
+from custom_layers import SumLayer, NormLayer
 
 w_bifpns = [64, 88, 112, 160, 224, 288, 384]
 image_sizes = [512, 640, 768, 896, 1024, 1280, 1408]
@@ -207,22 +209,46 @@ def efficientdet(phi, num_classes=20, weighted_bifpn=False, freeze_bn=False, sco
     feature3 = features[0] ## OUTPUT SIZE OF 28,28,64
     # feature2 = features[1]
     
-    feature3 = ConnectKeypointLayer(64)(feature3)
+    #feature3 = ConnectKeypointLayer(64)(feature3)
 
-    depth = layers.Flatten()(feature3)
-    depth = layers.Dense(21, activation = 'linear', name = 'depth')(depth)
-    
+   # depth = layers.Flatten()(feature3)
+    #depth = layers.Dense(21, activation = 'linear', name = 'depth')(depth)
+#    split = tf.split(feature3, 32, axis = -1)
+
 
     feature2 = layers.UpSampling2D()(feature3) # from 28 -> 56
-    feature2_cont = layers.Conv2D(21, kernel_size = 7, strides = 1, padding = "same", activation = 'relu')(feature2)
-    feature2 = layers.Conv2D(21, kernel_size = 7, strides = 1, padding = "same", activation = 'sigmoid', name = 'normalsize')(feature2)
+    feature2_cont = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature2)
+    feature2 = layers.Conv2D(21, kernel_size = 1, strides = 1, padding = "same", activation = 'linear', name = 'normalsize')(feature2)
     feature1 = layers.UpSampling2D()(feature2_cont) # from 56 -> 112
     feature1_cont = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature1)
-    feature1 = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'sigmoid', name = 'size2')(feature1)
+    feature1 = layers.Conv2D(21, kernel_size = 1, strides = 1, padding = "same", activation = 'linear', name = 'size2')(feature1)
     feature_cont = layers.UpSampling2D()(feature1_cont) #from 112 -> 224
-    feature = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'sigmoid', name = 'size3')(feature_cont)
+    feature = layers.Conv2D(21, kernel_size = 1, strides = 1, padding = "same", activation = 'linear', name = 'size3')(feature_cont)
     # depth = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'linear', name = 'depthmaps')(feature_cont)
 
+
+
+    # depth = layers.UpSampling2D()(feature3)  # from 28 -> 56
+    # depth = layers.Conv2D(21, kernel_size=3, strides=1, padding="same", activation='sigmoid')(depth)
+    # depth = layers.UpSampling2D()(depth)  # from 56 -> 112
+    # depth = layers.Conv2D(21, kernel_size=3, strides=1, padding="same", activation='sigmoid')(depth)
+    # depth = layers.UpSampling2D()(depth)  # from 112 -> 224
+    # depth = layers.Conv2D(21, kernel_size=1, strides=1, padding="same", activation='sigmoid')(depth)
+    #
+    # depth = NormLayer()(feature_cont)
+    # depth = layers.Multiply()([depth, feature])
+
+
+
+   # depth = layers.Lambda(lambda x: K.sum(x, axis=1))(depth)
+    #depth = layers.Lambda(lambda x: K.sum(x, axis=1),name='depthmaps')(depth)
+  #  depth = SumLayer()(depth)
+
+    #depth = layers.Conv2D(21, kernel_size=1, strides=1, padding="same", activation='sigmoid')(depth)
+
+    #depth = layers.Lambda(lambda x: K.sum(x, axis=1), name='depthmaps')(depth)
+
+    #depth = K.sum(depth, axis=1)
     # feature = layers.Reshape((224,224))(feature)
     # feature = feature2
 
@@ -231,7 +257,8 @@ def efficientdet(phi, num_classes=20, weighted_bifpn=False, freeze_bn=False, sco
     
     # regression = regress_head(feature3)
 
-    model = models.Model(inputs=[image_input], outputs=[feature2, feature1, feature, depth])
+   # model = models.Model(inputs=[image_input], outputs=[feature2, feature1, feature, depth])
+    model = models.Model(inputs=[image_input], outputs=[feature2, feature1, feature])
 
     return model
 
