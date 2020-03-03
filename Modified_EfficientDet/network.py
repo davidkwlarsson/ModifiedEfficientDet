@@ -177,11 +177,12 @@ def build_regress_head(width, depth, num_anchors=9):
 
 
 
-def efficientdet(phi, num_classes=20, weighted_bifpn=False, freeze_bn=False, score_threshold=0.01):
+def efficientdet(phi,input_shape = (224,224,3), num_classes=20, weighted_bifpn=False, freeze_bn=False, score_threshold=0.01):
     assert phi in range(7)
     input_size = image_sizes[phi]
     # input_shape = (input_size, input_size, 3)
-    input_shape = (224, 224, 3)
+    # input_shape = (224, 224, 3)
+    input_shape = input_shape
     image_input = layers.Input(input_shape)
     w_bifpn = w_bifpns[phi]
     d_bifpn = 2 + phi
@@ -202,20 +203,20 @@ def efficientdet(phi, num_classes=20, weighted_bifpn=False, freeze_bn=False, sco
             features = build_BiFPN(features, w_bifpn, i, freeze_bn=freeze_bn)
 
     # regress_head = build_regress_head(w_head, d_head)
-    # print("shape of output from final BiFPN layer: ", features[0].shape, features[1].shape, features[2].shape)
+    print("shape of output from final BiFPN layer: ", features[0].shape, features[1].shape, features[2].shape)
     
-    feature3 = features[0] ## OUTPUT SIZE OF 28,28,64
+    feature3 = features[0] ## OUTPUT SIZE OF 28,28,64 for freihand
     # feature2 = features[1]
     
     feature3 = ConnectKeypointLayer(64)(feature3)
 
-    depth = layers.Flatten()(feature3)
-    depth = layers.Dense(21, activation = 'linear', name = 'depth')(depth)
+    # depth = layers.Flatten()(feature3)
+    # depth = layers.Dense(21, activation = 'linear', name = 'depth')(depth)
     
 
     feature2 = layers.UpSampling2D()(feature3) # from 28 -> 56
-    feature2_cont = layers.Conv2D(21, kernel_size = 7, strides = 1, padding = "same", activation = 'relu')(feature2)
-    feature2 = layers.Conv2D(21, kernel_size = 7, strides = 1, padding = "same", activation = 'sigmoid', name = 'normalsize')(feature2)
+    feature2_cont = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature2)
+    feature2 = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'sigmoid', name = 'normalsize')(feature2)
     feature1 = layers.UpSampling2D()(feature2_cont) # from 56 -> 112
     feature1_cont = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature1)
     feature1 = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'sigmoid', name = 'size2')(feature1)
@@ -231,7 +232,7 @@ def efficientdet(phi, num_classes=20, weighted_bifpn=False, freeze_bn=False, sco
     
     # regression = regress_head(feature3)
 
-    model = models.Model(inputs=[image_input], outputs=[feature2, feature1, feature, depth])
+    model = models.Model(inputs=[image_input], outputs=[feature2, feature1, feature])
 
     return model
 

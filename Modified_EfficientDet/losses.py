@@ -1,5 +1,5 @@
 # import tensorflow as tf
-from tensorflow.compat.v1.keras import backend as K
+from tensorflow.keras import backend as K
 
 def binary_focal_loss(gamma = 2., alpha = 0.25):
 
@@ -35,3 +35,10 @@ def weighted_bce(y_true, y_pred):
   bce = K.binary_crossentropy(y_true, y_pred)
   weighted_bce = K.mean(bce * weights)
   return weighted_bce
+
+
+def heatmap_loss(y_true, y_pred):
+    l = ((y_pred-y_true)**2)
+    l = K.mean(K.mean(K.mean(l, axis = -1), axis = -1), axis = -1)
+    return l
+
