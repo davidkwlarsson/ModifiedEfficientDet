@@ -31,27 +31,30 @@ def plot_heatmaps_with_coords(images, heatmaps, coords):
     plt.imshow(hm)
     plt.scatter(coords[0][0::2], coords[0][1::2], marker='o', color='r', s=2)
     plt.colorbar()
-    plt.show()
     print(coords[0][0:2])
+    plt.show()
 
 
 def plot_acc_loss(history):
     # Plot acc and loss vs epochs
-    acc = history.history['acc']
-    val_acc = history.history['val_acc']
+    #acc = history.history['acc']
+    #val_acc = history.history['val_acc']
     loss = history.history['loss']
     val_loss = history.history['val_loss']
-    epochs = range(1, len(acc) + 1)
-    plt.plot(epochs, acc, 'bo', label='Training acc')
-    plt.plot(epochs, val_acc, 'b', label='Validation acc')
-    plt.title('Training and validation accuracy')
-    plt.legend()
-    plt.figure()
+    epochs = range(1, len(loss) + 1)
+   # plt.plot(epochs, acc, 'bo', label='Training acc')
+   # plt.plot(epochs, val_acc, 'b', label='Validation acc')
+    #plt.title('Training and validation accuracy')
+    #plt.legend()
+    #plt.figure()
     plt.plot(epochs, loss, 'bo', label='Training loss')
     plt.plot(epochs, val_loss, 'b', label='Validation loss')
     plt.title('Training and validation loss')
     plt.legend()
     plt.show()
+    plt.savefig('acc_loss.png')
+
+
 
 
 def read_img(idx, base_path, set_name, version=None):
@@ -70,11 +73,14 @@ def read_img(idx, base_path, set_name, version=None):
 def heatmaps_to_coord(heatmaps):
     coords = [[] for x in range(len(heatmaps))]
     for j in range(len(heatmaps)):
+
         for i in range(21):
             ind = np.unravel_index(np.argmax(heatmaps[j][:, :, i], axis=None), heatmaps[j][:, :, i].shape)
-            coords[j].append(ind[0])
-            coords[j].append(ind[1])
 
+            coords[j].append(ind[1])
+            coords[j].append(ind[0])
+    print(coords)
+    #print('coords')
     return np.array(coords)
 
 
@@ -97,35 +103,34 @@ def get_depthmaps(uv,xyz_list):
 
     return depths
 
-
+# NOTE that they are not symmetric atm..
+# check by running test
 def create_gaussian_hm(uv, w, h):
-    # TODO: Hantera kantfallen också
     hm_list = list()
     hm_list2 = list()
     hm_list3 = list()
-    im = np.zeros((w, h))
+    py = 50
+    px = 50
+    im = np.zeros((w+2*px, h+2*py))
     std = 2
-    radius = 4
+    radius = 6
 
     for coord in uv:
-        u = coord[1]
-        v = coord[0]
-        if u<0:
-            u = 1 + radius
-        elif u>224:
-            u = 224 -1 - radius
-        if v<0:
-            v = 1 + radius
-        elif v>224:
-            v = 224 - 1 - radius
+        u = coord[1]+px
+        v = coord[0]+py
         hm_small = np.zeros((radius * 2 + 1, radius * 2 + 1))
         xc, yc = (radius + 1, radius + 1)
         for x in range(radius * 2 + 1):
             for y in range(radius * 2 + 1):
                 dist = math.sqrt((x - xc) ** 2 + (y - yc) ** 2)
-                if dist < 4:
-                    scale = 10  # otherwise predict only zeros
+                if dist < radius:
+                    scale = 1  # otherwise predict only zeros
                     hm_small[x][y] = scale * math.exp(-dist ** 2 / (2 * std ** 2)) / (std * math.sqrt(2 * math.pi))
+        m = np.max(hm_small)
+        for x in range(radius * 2 + 1):
+            for y in range(radius * 2 + 1):
+                hm_small[x][y] = hm_small[x][y]/m
+        #hm_small = hm_small/np.argmax(np.argmax(hm_small))
         # plt.imshow(hm_small)
         # plt.show()
         # print('here')
@@ -135,15 +140,19 @@ def create_gaussian_hm(uv, w, h):
             im[int(xc_im - radius - 1):int(xc_im + radius), int(yc_im - 1 - radius):int(yc_im + radius)] = hm_small
         except:
             print('Gaussian hm failed\n')
+            print(u, v)
             print(int(xc_im - radius - 1), int(xc_im + radius), int(yc_im - 1 - radius), int(yc_im + radius))
-            print(u,v)
-
+            print(coord[0], coord[1])
+            print(im[int(xc_im - radius - 1):int(xc_im + radius), int(yc_im - 1 - radius):int(yc_im + radius)].shape)
+            print(hm_small.shape)
+            print(im[px:-px, py:-py].shape)
+            print(im.shape)
             continue
 
-        hm_list.append(im)
+        hm_list.append(im[px:-px, py:-py])
         hm_list2.append(resize(im, (w / 2, h / 2)))
         hm_list3.append(resize(im, (w / 4, h / 4)))
-        im = np.zeros((w, h))
+        im = np.zeros((w + 2 * px, h + 2 * py))
 
     # plt.imshow(im)
     # plt.show()
@@ -187,6 +196,31 @@ def get_depth(xyz_list):
         depth[j] = xyz[j, 2]
     return depth
 
+def get_data(dir_path, num_samples, multi_dim = True):
+    print("Collecting data ... \n")
+    imgs = []
+    uv = []
+    coords = []
+    hm = []
+    xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))
+    K_list = json_load(os.path.join(dir_path, 'training_K.json'))
+    n = 0
+    for i in range(num_samples, num_samples+200):
+        # load images
+        img = read_img(i, dir_path, 'training')
+        imgs.append(img)
+        uv_i = projectPoints(xyz_list[i], K_list[i])
+        uv.append(uv_i)
+        hm_tmp = create_gaussian_hm(uv_i,224,224)
+        hm.append(hm_tmp[2])
+        coords.append([])
+        for j, coord in enumerate(uv_i):
+            # save coordinates
+            coords[n].append(coord[0])
+            coords[n].append(coord[1])
+        n=n+1
+    return imgs, uv, np.array(hm), np.array(coords)
+
 
 def get_trainData(dir_path, num_samples, multi_dim = True):
     print("Collecting data ... \n")
@@ -204,13 +238,14 @@ def get_trainData(dir_path, num_samples, multi_dim = True):
         imgs.append(img)
         # project 3d coords and create heatmaps
         uv = projectPoints(xyz_list[i], K_list[i])
-        # heats.append(create_gaussian_hm(uv,56,56))
         onehots = create_onehot(uv, 56, 56)
-        heats.append(onehots[0])
+        hm = create_gaussian_hm(uv,224,224)
+        heats.append(hm[2])
         heats2.append(onehots[1])
         heats3.append(onehots[2])
         coords.append([])
         z = []
+
         for j, coord in enumerate(uv):
             # save coordinates
             coords[i].append(coord[0])
@@ -218,8 +253,9 @@ def get_trainData(dir_path, num_samples, multi_dim = True):
             z.append(xyz_list[i][j][2])
 
         # tmp = np.transpose(np.array(heats[i]), (2, 0, 1))
+
         # for training this format should work
-        hm_depth.append(create_depth_hm(heats[i], z[0], z))
+      #  hm_depth.append(create_depth_hm(heats[i], z[0], z))
     return np.array(imgs), np.array(heats), np.array(heats2), np.array(heats3), np.array(coords)
 
 
@@ -236,23 +272,21 @@ def get_evalImages(dir_path, num_samples):
 
 def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
     if data_set == 'training':
-        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[:-300]
-        xyz_list *= 4
-        num_samples = len(xyz_list) # - 300 # MINUS THE SAMPLES IN VALIDATION SET
-        print("Total number of training samples: ", num_samples)
-        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[:-300]
-        K_list *= 4
-        indicies = [i for i in range(32000)] + [i for i in range(32560,64564)] + [i for i in range(65120,97120)] + [i for i in range(97680,129680)]
-
-    elif data_set == 'validation':
-        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-300:]
+        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[:-560]
         xyz_list *= 4
         num_samples = len(xyz_list)
-        print("Total number of evaluation samples: ", num_samples)
-        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-300:]
+        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[:-560]
         K_list *= 4
-        indicies = [i for i in range(32000,32560)] + [i for i in range(64564,65120)] + [i for i in range(97120, 97680)] + [i for i in range(129680,130240)]
-
+        indicies = [i for i in range(32000)] + [i for i in range(32560,64560)] + [i for i in range(65120,97120)] + [i for i in range(97680,129680)]
+        print("Total number of training samples: ", num_samples, " and ", len(indicies))
+    elif data_set == 'validation':
+        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-560:]
+        xyz_list *= 4
+        num_samples = len(xyz_list)
+        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-560:]
+        K_list *= 4
+        indicies = [i for i in range(32000,32560)] + [i for i in range(64560,65120)] + [i for i in range(97120, 97680)] + [i for i in range(129680,130240)]
+        print("Total number of validation samples: ", num_samples," and ", len(indicies))
     elif data_set == 'evaluation':
         xyz_list = json_load(os.path.join(dir_path, 'evaluation_xyz.json'))
         num_samples = len(xyz_list)
@@ -271,11 +305,15 @@ def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
         batch_y = [[], [], []]
         for j in range(batch_size):
             idx = indicies[i+j]
-            img = read_img(idx, dir_path, 'training')
+            img = read_img(idx, dir_path, 'training')/255.0
             uv = projectPoints(xyz_list[i+j], K_list[i+j])
-           # depth = get_depth(xyz_list[i+j])
-           # onehots = create_onehot(uv, 56, 56)
+            #depth = get_depth(xyz_list[i+j])
+            onehots = create_onehot(uv, 56, 56)
             hm = create_gaussian_hm(uv, 224, 224)
+            if tmp:
+               # plot_predicted_heatmaps_tmp(hm[0],onehots[0])
+               # print(uv)
+                tmp = False
            # z = []
            # for k in range(21):
                 # save depth coordinates
@@ -290,7 +328,7 @@ def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
 
             #print(np.shape(depthmap))
             batch_x.append(img)
-            batch_y[0].append(hm[0])
+            batch_y[0].append(onehots[0])
             batch_y[1].append(hm[1])
             batch_y[2].append(hm[2])
           #  batch_y[3].append(depthmap)
@@ -325,6 +363,22 @@ def plot_predicted_heatmaps(preds, heatmaps):
         plt.imshow(heatmaps[0][:, :, n])
         plt.colorbar()
         n += 1
+    #plt.show()
+    plt.savefig('heatmaps.png')
+    plt.imshow(np.sum(heatmaps[0][:, :, :], axis=-1))
+    plt.savefig('hand_as_hm.png')
+
+
+def plot_predicted_heatmaps_tmp(preds, heatmaps):
+    print(preds.shape)
+    print(heatmaps.shape)
+    fig = plt.figure()
+    fig.add_subplot(1, 2, 1)
+    plt.imshow(preds[:, :, 1])
+    plt.colorbar()
+    fig.add_subplot(1, 2, 1 + 1)
+    plt.imshow(heatmaps[:, :, 1])
+    plt.colorbar()
     plt.show()
     plt.savefig('heatmaps.png')
 
@@ -360,8 +414,9 @@ def plot_predicted_coordinates(images, coord_preds, coord):
             # need to project onto image..
             plt.scatter(coord[i - 1][0::2], coord[i - 1][1::2], marker='o', s=2)
             plt.scatter(coord_preds[i - 1][0::2], coord_preds[i - 1][1::2], marker='x', s=2)
-        plt.show()
         plt.savefig('scatter.png')
+        #plt.show()
+
     except:
         print('Error in scatter plot')
 
@@ -376,10 +431,10 @@ def plot_predicted_hands(images, coord_preds):
         plt.imshow(images[i - 1])
         # nesed to project onto image..
         one_pred = [coord_preds[i-1][0::2], coord_preds[i-1][1::2]]
-        plot_hand(ax, np.transpose(np.array(one_pred)))
+        plot_hand(ax, np.transpose(np.array(one_pred)), order='uv')
 
 
-    plt.show()
+    #plt.show()
     plt.savefig('hands.png')
 
 
@@ -394,12 +449,12 @@ def plot_predicted_hands_uv(images, coord_preds):
             plt.imshow(images[i - 1])
             # need to project onto image..
             one_pred = [coord_preds[i-1][0::2], coord_preds[i-1][1::2]]
-            plot_hand(ax, np.transpose(np.array(one_pred)),order = 'uv')
+            plot_hand(ax, np.transpose(np.array(one_pred)), order='uv')
         except:
             print('error')
             continue
-    plt.show()
     plt.savefig('hands_uv.png')
+    plt.show()
 
 
 def add_depth_to_coords(coords, depth):
