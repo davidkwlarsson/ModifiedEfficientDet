@@ -148,7 +148,7 @@ def main():
     # model.fit(images, heatmaps, batch_size = 16, epochs = 100, verbose = 1)
 
     history = model.fit(traingen, validation_data = validgen, validation_steps = 18
-                    ,steps_per_epoch = 100, epochs = 30, verbose=1)
+                    ,steps_per_epoch = 100, epochs = 24, verbose=1)
 
     # model.save_weights('handposenet')
     validgen2 = dataGenerator(dir_path, batch_size= 20, data_set = 'validation')

@@ -8,7 +8,7 @@ import numpy as np
 from utils.fh_utils import *
 import skimage.io as io
 from generator import projectPoints, json_load, _assert_exist
-
+import cv2
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
@@ -306,6 +306,7 @@ def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
         for j in range(batch_size):
             idx = indicies[i+j]
             img = read_img(idx, dir_path, 'training')/255.0
+            #img = cv2.resize(img, (112,112))
             uv = projectPoints(xyz_list[i+j], K_list[i+j])
             #depth = get_depth(xyz_list[i+j])
             onehots = create_onehot(uv, 56, 56)
@@ -328,7 +329,7 @@ def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
 
             #print(np.shape(depthmap))
             batch_x.append(img)
-            batch_y[0].append(onehots[0])
+            batch_y[0].append(hm[0])
             batch_y[1].append(hm[1])
             batch_y[2].append(hm[2])
           #  batch_y[3].append(depthmap)
