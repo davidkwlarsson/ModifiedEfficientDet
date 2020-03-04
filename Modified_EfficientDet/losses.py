@@ -37,4 +37,3 @@ def weighted_bce(y_true, y_pred):
   bce = K.binary_crossentropy(y_true, y_pred)
   weighted_bce = K.mean(bce * weights)
   return weighted_bce
-

@@ -60,6 +60,11 @@ def makedirs(path):
         if not os.path.isdir(path):
             raise
 
+def scheduler(epoch):
+  if epoch < 10:
+    return 0.001
+  else:
+    return 0.001 * tf.math.exp(0.1 * (10 - epoch))
 
 def get_session():
     """
@@ -103,8 +108,8 @@ def main():
 
     # images, heatmaps, heatmaps2,heatmaps3, coord = get_trainData(dir_path, 100, multi_dim=True)
 
-    traingen = dataGenerator(dir_path, batch_size = 8, data_set = 'training')
-    validgen = dataGenerator(dir_path, batch_size= 8, data_set = 'validation')
+    traingen = dataGenerator(dir_path, batch_size = 16, data_set = 'training')
+    validgen = dataGenerator(dir_path, batch_size= 16, data_set = 'validation')
 
     # check if it looks good
     # plot_heatmaps_with_coords(images, heatmaps, coord)
@@ -147,8 +152,9 @@ def main():
     # K.set_value(model.optimizer.learning_rate, 1e-5)
     # model.fit(images, heatmaps, batch_size = 16, epochs = 100, verbose = 1)
 
+    callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
     history = model.fit(traingen, validation_data = validgen, validation_steps = 18
-                    ,steps_per_epoch = 100, epochs = 24, verbose=1)
+                    ,steps_per_epoch = 100 , epochs = 4, verbose=1,callbacks=[callback])
 
     # model.save_weights('handposenet')
     validgen2 = dataGenerator(dir_path, batch_size= 20, data_set = 'validation')
@@ -163,12 +169,12 @@ def main():
         print('could not plot loss')
     
     # get coordinates from predictions
-    print(preds3[0])
-    print('-------------------------')
-    print(preds3[1])
-    print('-------------------------')
+  #  print(preds3[0])
+  #  print('-------------------------')
+  #  print(preds3[1])
+  #  print('-------------------------')
     coord_preds = heatmaps_to_coord(preds3)
-    print(coord_preds) # all same :(
+  #  print(coord_preds) # all same :(
     #epth_tarval = heatmaps_to_depth(targets[3])
     #depth_predval = heatmaps_to_depth(depth)
 
@@ -184,17 +190,18 @@ def main():
     # Skeleton plot
     plot_predicted_hands_uv(images, coord_preds)
 
-    print('-------------------------')
-
-
     #xyz_pred = add_depth_to_coords(coord_preds[0], depth[0])
     #draw_3d_skeleton(xyz_pred, (224*2,224*2))
-    print(coord)
+   # print(coord)
     # Scatter plot
     plot_predicted_coordinates(images, coord_preds, coord)
     # plot_predicted_coordinates(images, coord_upsamp*2, coord)
 
-
+    plot_hm_with_images(preds3, targets[2], images, 0)
+    plot_hm_with_images(preds3, targets[2], images, 1)
+    plot_hm_with_images(preds3, targets[2], images, 2)
+    plot_hm_with_images(preds3, targets[2], images, 3)
+    plot_hm_with_images(preds3, targets[2], images, 4)
 
 
 

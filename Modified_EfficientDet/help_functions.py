@@ -306,10 +306,9 @@ def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
         for j in range(batch_size):
             idx = indicies[i+j]
             img = read_img(idx, dir_path, 'training')/255.0
-            #img = cv2.resize(img, (112,112))
             uv = projectPoints(xyz_list[i+j], K_list[i+j])
             #depth = get_depth(xyz_list[i+j])
-            onehots = create_onehot(uv, 56, 56)
+            #onehots = create_onehot(uv, 56, 56)
             hm = create_gaussian_hm(uv, 224, 224)
             if tmp:
                # plot_predicted_heatmaps_tmp(hm[0],onehots[0])
@@ -366,8 +365,35 @@ def plot_predicted_heatmaps(preds, heatmaps):
         n += 1
     #plt.show()
     plt.savefig('heatmaps.png')
+    plt.figure()
     plt.imshow(np.sum(heatmaps[0][:, :, :], axis=-1))
     plt.savefig('hand_as_hm.png')
+
+
+def plot_hm_with_images(hm_pred, hm_true, img, ind=0):
+    fig = plt.figure(figsize=(8, 8))
+    columns = 3
+    rows = 5
+    n = 0
+    for i in range(1,rows*3,3):
+        fig.add_subplot(rows, columns, i)
+        plt.imshow(hm_pred[ind][:, :, n])
+        plt.colorbar()
+        fig.add_subplot(rows, columns, i+1)
+        plt.imshow(hm_true[ind][:, :, n])
+        plt.colorbar()
+        fig.add_subplot(rows, columns, i + 2)
+        plt.imshow(img[ind])
+        #for i in range(21):
+        ind_pred = np.unravel_index(np.argmax(hm_pred[ind][:, :, n], axis=None), hm_pred[ind][:, :, n].shape)
+        ind_true = np.unravel_index(np.argmax(hm_true[ind][:, :, n], axis=None), hm_true[ind][:, :, n].shape)
+        plt.scatter(ind_pred[1], ind_pred[0], c='r', s=2)
+        plt.scatter(ind_true[1], ind_true[0], c='b', s=2)
+
+        n += 1
+    #plt.show()
+    plt.savefig('extended_hm'+str(ind)+'.png')
+
 
 
 def plot_predicted_heatmaps_tmp(preds, heatmaps):

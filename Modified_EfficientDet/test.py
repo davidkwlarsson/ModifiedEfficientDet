@@ -14,8 +14,18 @@ import matplotlib
 
 
 
+#def tmp3():
+
+
 if __name__ == '__main__':
     dir_path = sys.argv[1]
+    matplotlib.use('TkAgg')
+
+    validgen2 = dataGenerator(dir_path, batch_size= 10, data_set='training')
+    (images, targets) = next(validgen2)
+    plot_hm_with_images(targets[2], targets[2], images, 3)
+
+def tmp2():
     img, uv, hm, coords = get_data(dir_path, 19200, multi_dim=True)
     print(hm.shape)
     print(coords.shape)
@@ -45,8 +55,6 @@ def tmp():
     (images, targets) = next(validgen2)
     oh, hm1, hm2 = targets
     coord = heatmaps_to_coord(hm2)
-
-
     i = 2
     print(coord[i])
     # PLOT THE DATA
