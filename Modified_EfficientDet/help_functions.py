@@ -3,19 +3,35 @@ import sys
 import pickle
 import matplotlib
 import math
+import json
 
 import numpy as np
 from numpy import asarray
 from numpy import savetxt
 from utils.fh_utils import *
 import skimage.io as io
-from generator import projectPoints, json_load, _assert_exist
 
 # matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
 
+def _assert_exist(p):
+    msg = 'File does not exists: %s' % p
+    assert os.path.exists(p), msg
+
+def json_load(p):
+    _assert_exist(p)
+    with open(p, 'r') as fi:
+        d = json.load(fi)
+    return d
+
+def projectPoints(xyz, K): 
+    """ Project 3D coordinates into image space. """
+    xyz = np.array(xyz)
+    K = np.array(K)
+    uv = np.matmul(K, xyz.T).T
+    return uv[:, :2] / uv[:, -1:]
 
 def plot_heatmaps_with_coords(images, heatmaps, coords):
     # Here I display heatmaps and coordinates to check that the heatmaps are correctly generated
@@ -133,9 +149,9 @@ def create_onehot(uv, w, h):
     for j,coord in enumerate(uv):
             # temp_im = np.zeros((224,224))
         try: 
-            temp_im[int(coord[0]/4), int(coord[1]/4),j] = 1
-            temp_im2[int(coord[0]/2), int(coord[1]/2),j] = 1
-            temp_im3[int(coord[0]), int(coord[1]),j] = 1
+            temp_im[int(coord[1]/4), int(coord[0]/4),j] = 1
+            temp_im2[int(coord[1]/2), int(coord[0]/2),j] = 1
+            temp_im3[int(coord[1]), int(coord[0]),j] = 1
         except:
             print("\n Coordinates where out of range : " , coord[0], coord[1])
     return temp_im, temp_im2, temp_im3
@@ -146,99 +162,6 @@ def get_depth(xyz_list):
     for j in range(21):
         depth[j] = xyz[j, 2]
     return depth
-
-
-def get_trainData(dir_path, num_samples, multi_dim = True):
-    print("Collecting data ... \n")
-    imgs = []
-    heats = []
-    heats2 = []
-    heats3 = []
-    coords = []
-    xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))
-    K_list = json_load(os.path.join(dir_path, 'training_K.json'))
-    for i in range(num_samples):
-        # load images
-        img = read_img(i, dir_path, 'training')
-        imgs.append(img)
-        # project 3d coords and create heatmaps
-        uv = projectPoints(xyz_list[i], K_list[i])
-        # heats.append(create_gaussian_hm(uv,56,56))
-        onehots = create_onehot(uv, 56,56)
-        heats.append(onehots[0])
-        heats2.append(onehots[1])
-        heats3.append(onehots[2])
-        coords.append([])
-        for j,coord in enumerate(uv):
-            # save coordinates
-            coords[i].append(coord[0])
-            coords[i].append(coord[1])
-
-    return np.array(imgs), np.array(heats), np.array(heats2), np.array(heats3), np.array(coords)
-
-
-def get_evalImages(dir_path, num_samples):
-    print("Collecting data evaluation data ... \n")
-    imgs = []
-    for i in range(num_samples):
-        # load images
-        img = read_img(i, dir_path, 'evaluation')
-        imgs.append(img)
-
-    return np.array(imgs)
-
-
-def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
-    if data_set == 'training':
-        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[:-560]
-        xyz_list *= 4
-        num_samples = len(xyz_list)
-        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[:-560]
-        K_list *= 4
-        indicies = [i for i in range(32000)] + [i for i in range(32560,64560)] + [i for i in range(65120,97120)] + [i for i in range(97680,129680)]
-        print("Total number of training samples: ", num_samples, " and ", len(indicies))
-    elif data_set == 'validation':
-        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-560:]
-        xyz_list *= 4
-        num_samples = len(xyz_list)
-        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-560:]
-        K_list *= 4
-        indicies = [i for i in range(32000,32560)] + [i for i in range(64560,65120)] + [i for i in range(97120, 97680)] + [i for i in range(129680,130240)]
-        print("Total number of validation samples: ", num_samples," and ", len(indicies))
-    elif data_set == 'evaluation':
-        xyz_list = json_load(os.path.join(dir_path, 'evaluation_xyz.json'))
-        num_samples = len(xyz_list)
-        print("Total number of evaluation samples: ", num_samples)
-        K_list = json_load(os.path.join(dir_path, 'evaluation_K.json'))
-
-    else:
-        print("No specified data found!")
-        sys.exit()
-        
-
-    i = 0
-    while True:
-        batch_x = []
-        batch_y = [[], [], []]
-        for j in range(batch_size):
-            idx = indicies[i+j]
-            img = read_img(idx, dir_path, 'training')/255
-            uv = projectPoints(xyz_list[i+j], K_list[i+j])
-            # depthmaps = get_depthmaps(uv, xyz_list[idx])
-            depth = get_depth(xyz_list[i+j])
-            onehots = create_onehot(uv, 56,56)
-            batch_x.append(img)
-            batch_y[0].append(onehots[0])
-            batch_y[1].append(onehots[1])
-            batch_y[2].append(onehots[2])
-            # batch_y[3].append(depthmaps)
-            # batch_y[3].append(depth)
-            if i+j == num_samples-1:
-                i = -j
-        i += batch_size
-
-        yield (np.array(batch_x), batch_y)
-
 
 
 
@@ -253,21 +176,25 @@ def save_preds(dir_path, predictions):
         io.imsave(name, pred.astype(np.uint8))
 
 
-def plot_predicted_heatmaps(preds, heatmaps):
+def plot_predicted_heatmaps(preds, heatmaps, images):
     fig = plt.figure(figsize=(8, 8))
     columns = 2
     rows = 5
     n = 0
     for i in range(1,rows+1,2):
         fig.add_subplot(rows, columns, i)
-        plt.imshow(preds[0][:, :, n])
+        # plt.imshow(preds[0][:, :, n])
+        pred = np.sum(preds[0], axis = -1)
+        plt.imshow(pred)
         plt.colorbar()
         fig.add_subplot(rows, columns, i+1)
-        plt.imshow(heatmaps[0][:, :, n])
+        # plt.imshow(heatmaps[0][:, :, n])
+        plt.imshow(images[0])
         plt.colorbar()
         n += 1
-    plt.show()
+        break
     plt.savefig('heatmaps.png')
+    plt.show()
 
 
 
@@ -280,10 +207,11 @@ def plot_predicted_coordinates(images, coord_preds, coord):
             fig.add_subplot(rows, columns, i)
             plt.imshow(images[i - 1])
             # need to project onto image..
-            plt.scatter(coord[i - 1][0::2], coord[i - 1][1::2], marker='o', s=2)
-            plt.scatter(coord_preds[i - 1][0::2], coord_preds[i - 1][1::2], marker='x', s=2)
-        plt.show()
+            plt.scatter(coord[i - 1][1::2], coord[i - 1][0::2], marker='o', s=2)
+            plt.scatter(coord_preds[i - 1][1::2], coord_preds[i - 1][0::2], marker='x', s=2)
+        
         plt.savefig('scatter.png')
+        plt.show()
     except:
         print('Error in scatter plot')
 
@@ -313,11 +241,11 @@ def plot_predicted_hands_uv(images, coord_preds):
         ax = fig.add_subplot(rows, columns, i)
         plt.imshow(images[i - 1])
         # need to project onto image..
-        one_pred = [coord_preds[i-1][0::2], coord_preds[i-1][1::2]]
+        one_pred = [coord_preds[i-1][1::2], coord_preds[i-1][0::2]]
         plot_hand(ax, np.transpose(np.array(one_pred)),order = 'uv')
         
-    plt.show()
     plt.savefig('hands_uv.png')
+    plt.show()
 
 
 def add_depth_to_coords(coords, depth, K):
@@ -389,25 +317,64 @@ def draw_3d_skeleton(pose_cam_xyz, image_size):
     plt.show()
 
 
-# def fig2data(fig):
-#     """
-#     @brief Convert a Matplotlib figure to a 4D numpy array with RGBA channels and return it
-#     @param fig a matplotlib figure
-#     @return a numpy 3D array of RGBA values
-#     """
-#     # draw the renderer
-#     fig.canvas.draw()
-
-#     # Get the RGBA buffer from the figure
-#     w, h = fig.canvas.get_width_height()
-#     buf = np.fromstring(fig.canvas.tostring_argb(), dtype=np.uint8)
-#     buf.shape = (w, h, 4)
-
-#     # canvas.tostring_argb give pixmap in ARGB mode. Roll the ALPHA channel to have it in RGBA mode
-#     buf = np.roll(buf, 3, axis=2)
-#     return buf
-
 
 def save_xyz(pose_cam_xyz, image):
     savetxt('pose_cam_xyz.csv',pose_cam_xyz, delimiter=',')
     pickle.dump(image, open('hand_for_3d.fig.pickle', 'wb'))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# def get_trainData(dir_path, num_samples, multi_dim = True):
+#     print("Collecting data ... \n")
+#     imgs = []
+#     heats = []
+#     heats2 = []
+#     heats3 = []
+#     coords = []
+#     xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))
+#     K_list = json_load(os.path.join(dir_path, 'training_K.json'))
+#     for i in range(num_samples):
+#         # load images
+#         img = read_img(i, dir_path, 'training')
+#         imgs.append(img)
+#         # project 3d coords and create heatmaps
+#         uv = projectPoints(xyz_list[i], K_list[i])
+#         # heats.append(create_gaussian_hm(uv,56,56))
+#         onehots = create_onehot(uv, 56,56)
+#         heats.append(onehots[0])
+#         heats2.append(onehots[1])
+#         heats3.append(onehots[2])
+#         coords.append([])
+#         for j,coord in enumerate(uv):
+#             # save coordinates
+#             coords[i].append(coord[0])
+#             coords[i].append(coord[1])
+
+#     return np.array(imgs), np.array(heats), np.array(heats2), np.array(heats3), np.array(coords)
+
+
+# def get_evalImages(dir_path, num_samples):
+#     print("Collecting data evaluation data ... \n")
+#     imgs = []
+#     for i in range(num_samples):
+#         # load images
+#         img = read_img(i, dir_path, 'evaluation')
+#         imgs.append(img)
+
+#     return np.array(imgs)

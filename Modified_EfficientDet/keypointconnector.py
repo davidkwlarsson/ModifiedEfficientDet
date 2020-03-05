@@ -45,8 +45,8 @@ class ConnectKeypointLayer(layers.Layer):
         self.W = list()
         for i in range(21):
             self.W.append(self.add_weight(name='lambda',
-                                     shape=[32,
-                                      32],
+                                     shape=[1,
+                                      1],
                                       initializer='uniform',
                                      trainable=True))
 
@@ -68,7 +68,7 @@ class ConnectKeypointLayer(layers.Layer):
             c = K.concatenate(tuple(c), axis=-1)
             h = self.conv2a[i](c)
             g = self.conv2b[i](h)
-            l = K.dot(g,self.W[i])
+            l = g * self.W[i]
             fn.append(K.sum(K.concatenate((f[i], l), axis=-1), axis=-1, keepdims=True))
 
         return K.concatenate(tuple(fn), axis=-1)
