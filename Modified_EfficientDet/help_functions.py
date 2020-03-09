@@ -15,6 +15,56 @@ import skimage.io as io
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
+import tensorflow as tf
+
+
+
+def render_onehot_heatmap(coord, output_shape, num_keypoints):
+    batch_size = tf.shape(coord)[0]
+    input_shape = output_shape
+
+    x = tf.reshape(coord[:, :, 0] / input_shape[1] * output_shape[1], [-1])
+    y = tf.reshape(coord[:, :, 1] / input_shape[0] * output_shape[0], [-1])
+    x_floor = tf.floor(x)
+    y_floor = tf.floor(y)
+
+    x_floor = tf.clip_by_value(x_floor, 0, output_shape[1] - 1)  # fix out-of-bounds x
+    y_floor = tf.clip_by_value(y_floor, 0, output_shape[0] - 1)  # fix out-of-bounds y
+
+    indices_batch = tf.expand_dims(tf.to_float( \
+        tf.reshape(
+            tf.transpose( \
+                tf.tile( \
+                    tf.expand_dims(tf.range(batch_size), 0) \
+                    , [num_keypoints, 1]) \
+                , [1, 0]) \
+            , [-1])), 1)
+    indices_batch = tf.concat([indices_batch] * 4, axis=0)
+    indices_joint = tf.to_float(tf.expand_dims(tf.tile(tf.range(num_keypoints), [batch_size]), 1))
+    indices_joint = tf.concat([indices_joint] * 4, axis=0)
+
+    indices_lt = tf.concat([tf.expand_dims(y_floor, 1), tf.expand_dims(x_floor, 1)], axis=1)
+    indices_lb = tf.concat([tf.expand_dims(y_floor + 1, 1), tf.expand_dims(x_floor, 1)], axis=1)
+    indices_rt = tf.concat([tf.expand_dims(y_floor, 1), tf.expand_dims(x_floor + 1, 1)], axis=1)
+    indices_rb = tf.concat([tf.expand_dims(y_floor + 1, 1), tf.expand_dims(x_floor + 1, 1)], axis=1)
+    indices = tf.concat([indices_lt, indices_lb, indices_rt, indices_rb], axis=0)
+    indices = tf.cast(tf.concat([tf.to_float(indices_batch), tf.to_float(indices), tf.to_float(indices_joint)], axis=1),
+                      tf.int32)
+
+    prob_lt = (1 - (x - x_floor)) * (1 - (y - y_floor))
+    prob_lb = (1 - (x - x_floor)) * (y - y_floor)
+    prob_rt = (x - x_floor) * (1 - (y - y_floor))
+    prob_rb = (x - x_floor) * (y - y_floor)
+    probs = tf.concat([prob_lt, prob_lb, prob_rt, prob_rb], axis=0)
+    #  probs = tf.concat([prob_lt,prob_lt,prob_lt,prob_lt], axis=0)
+
+    heatmap = tf.scatter_nd(indices, probs, (batch_size, *output_shape, num_keypoints))
+    normalizer = tf.reshape(tf.reduce_sum(heatmap, axis=[1, 2]), [batch_size, 1, 1, num_keypoints])
+    normalizer = tf.where(tf.equal(normalizer, 0), tf.ones_like(normalizer), normalizer)
+    heatmap = heatmap / normalizer
+
+    return heatmap
+
 
 def _assert_exist(p):
     msg = 'File does not exists: %s' % p
@@ -55,21 +105,23 @@ def plot_heatmaps_with_coords(images, heatmaps, coords):
 
 def plot_acc_loss(history):
     # Plot acc and loss vs epochs
-    acc = history.history['acc']
-    val_acc = history.history['val_acc']
+    # Plot acc and loss vs epochs
+    #acc = history.history['acc']
+    #val_acc = history.history['val_acc']
     loss = history.history['loss']
     val_loss = history.history['val_loss']
-    epochs = range(1, len(acc) + 1)
-    plt.plot(epochs, acc, 'bo', label='Training acc')
-    plt.plot(epochs, val_acc, 'b', label='Validation acc')
-    plt.title('Training and validation accuracy')
-    plt.legend()
-    plt.figure()
+    epochs = range(1, len(loss) + 1)
+   # plt.plot(epochs, acc, 'bo', label='Training acc')
+   # plt.plot(epochs, val_acc, 'b', label='Validation acc')
+    #plt.title('Training and validation accuracy')
+    #plt.legend()
+    #plt.figure()
     plt.plot(epochs, loss, 'bo', label='Training loss')
     plt.plot(epochs, val_loss, 'b', label='Validation loss')
     plt.title('Training and validation loss')
     plt.legend()
     plt.show()
+    plt.savefig('acc_loss.png')
 
 
 def read_img(idx, base_path, set_name, version=None):
@@ -90,8 +142,8 @@ def heatmaps_to_coord(heatmaps):
     for j in range(len(heatmaps)):
         for i in range(21):
             ind = np.unravel_index(np.argmax(heatmaps[j][:, :, i], axis=None), heatmaps[j][:, :, i].shape)
-            coords[j].append(ind[0])
             coords[j].append(ind[1])
+            coords[j].append(ind[0])
 
     return np.array(coords)
 
@@ -142,6 +194,7 @@ def create_gaussian_hm(uv, w, h):
 
 def create_onehot(uv, w, h):
     heats = list()
+    uv = uv[:, ::-1]
     temp_im = np.zeros((w,h,21))
     temp_im2 = np.zeros((w*2,h*2,21))
     temp_im3 = np.zeros((w*4,h*4,21))
@@ -149,9 +202,9 @@ def create_onehot(uv, w, h):
     for j,coord in enumerate(uv):
             # temp_im = np.zeros((224,224))
         try: 
-            temp_im[int(coord[1]/4), int(coord[0]/4),j] = 1
-            temp_im2[int(coord[1]/2), int(coord[0]/2),j] = 1
-            temp_im3[int(coord[1]), int(coord[0]),j] = 1
+            temp_im[int(coord[0]/4), int(coord[1]/4),j] = 1
+            temp_im2[int(coord[0]/2), int(coord[1]/2),j] = 1
+            temp_im3[int(coord[0]), int(coord[1]),j] = 1
         except:
             print("\n Coordinates where out of range : " , coord[0], coord[1])
     return temp_im, temp_im2, temp_im3
@@ -188,7 +241,7 @@ def plot_predicted_heatmaps(preds, heatmaps, images):
         plt.imshow(pred)
         plt.colorbar()
         fig.add_subplot(rows, columns, i+1)
-        # plt.imshow(heatmaps[0][:, :, n])
+        # plt.imshow(heatmaps[0][:,:,n])
         plt.imshow(images[0])
         plt.colorbar()
         n += 1
@@ -207,8 +260,8 @@ def plot_predicted_coordinates(images, coord_preds, coord):
             fig.add_subplot(rows, columns, i)
             plt.imshow(images[i - 1])
             # need to project onto image..
-            plt.scatter(coord[i - 1][1::2], coord[i - 1][0::2], marker='o', s=2)
-            plt.scatter(coord_preds[i - 1][1::2], coord_preds[i - 1][0::2], marker='x', s=2)
+            plt.scatter(coord[i - 1][0::2], coord[i - 1][1::2], marker='o', s=2)
+            plt.scatter(coord_preds[i - 1][0::2], coord_preds[i - 1][1::2], marker='x', s=2)
         
         plt.savefig('scatter.png')
         plt.show()
@@ -241,23 +294,27 @@ def plot_predicted_hands_uv(images, coord_preds):
         ax = fig.add_subplot(rows, columns, i)
         plt.imshow(images[i - 1])
         # need to project onto image..
-        one_pred = [coord_preds[i-1][1::2], coord_preds[i-1][0::2]]
-        plot_hand(ax, np.transpose(np.array(one_pred)),order = 'uv')
+        one_pred = [coord_preds[i-1][0::2], coord_preds[i-1][1::2]]
+        
+        plot_hand(ax, np.transpose(np.array(one_pred)), order = 'uv')
         
     plt.savefig('hands_uv.png')
     plt.show()
 
 
-def add_depth_to_coords(coords, depth, K):
-
+def add_depth_to_coords(coords, depth, K_list):
+    xyz = []
     ## Transform the x,y coordinates back to 3D using the intrinsic camera parameters, K
-    K = np.array(K)
-    x_coords = coords[0::2]*depth
-    y_coords = coords[1::2]*depth
-    uv_z = np.array([x_coords, y_coords, depth])
-    xyz = np.linalg.solve(K,uv_z)
+    
+    for i in range(len(coords)):
+        K = np.array(K_list[i])
+        x_coords = coords[i][0::2]*depth[i]
+        y_coords = coords[i][1::2]*depth[i]
+        uv_z = np.array([x_coords, y_coords, depth[i]])
+        # print(uv_z.shape, K.shape)
+        xyz.append(np.array(np.linalg.solve(K,uv_z)).T)
 
-    return np.array(xyz).T
+    return xyz
 
 
 
@@ -318,9 +375,16 @@ def draw_3d_skeleton(pose_cam_xyz, image_size):
 
 
 
-def save_xyz(pose_cam_xyz, image):
-    savetxt('pose_cam_xyz.csv',pose_cam_xyz, delimiter=',')
-    pickle.dump(image, open('hand_for_3d.fig.pickle', 'wb'))
+def save_coords(pose_cam_coord, image):
+    pose_cam_coord = np.array(pose_cam_coord)
+    l,n,m = pose_cam_coord.shape
+    pose_cam_coord = pose_cam_coord.reshape((l*n, m))
+    if pose_cam_coord[0].shape[-1] == 3:
+        savetxt('pose_cam_xyz.csv',pose_cam_coord, delimiter=',')
+        pickle.dump(image, open('hand_for_3d.fig.pickle', 'wb'))
+    elif pose_cam_coord.shape[-1] == 2:
+        savetxt('pose_cam_xy.csv',pose_cam_coord, delimiter=',')
+        pickle.dump(image, open('hand_for_2d.fig.pickle', 'wb'))
 
 
 

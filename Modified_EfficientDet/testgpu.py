@@ -24,6 +24,8 @@ import os
 import sys
 
 import numpy as np
+from FreiHAND.freihand_utils import dataGenerator
+from help_functions import *
 
 def try_obman(dir_path):
     data_path = os.path.join(dir_path,'train', 'meta', '%08d.pkl' % 1)
@@ -53,10 +55,44 @@ def try_RHD(dir_path):
         if i == 10:
             break
         
+def try_plotting_stuff(dir_path):
+
+    traingen = dataGenerator(dir_path, batch_size = 16, data_set = 'training')
+    validgen = dataGenerator(dir_path, batch_size= 16, data_set = 'validation')
+
+    validgen2 = dataGenerator(dir_path, batch_size= 10, data_set = 'validation')
+    (images, targets) = next(validgen2)
+
+    
+    (heatmaps, heatmaps2, heatmaps3, depth) = targets
+    (preds, preds2 ,preds3, depth_pred) = targets
+    # (heatmaps, heatmaps2, heatmaps3) = targets
+    # (preds,preds2, preds3) = targets
+
+    coord_preds = heatmaps_to_coord(preds3)
+    coord = heatmaps_to_coord(heatmaps3)
+    
+    K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-560:]
+    K_list = K_list[:len(preds3)]
+
+    xyz_list = add_depth_to_coords(coord, depth, K_list)
+    # xy = []
+    # for i in range(len(coord)):
+    #     xy.append(np.array([coord[i][0::2], coord[i][1::2]]).T)
+    
+    save_coords(xyz_list, images[0])
+
+    # plot_predicted_heatmaps(preds, heatmaps, images)
+    # plot_predicted_hands_uv(images, coord_preds*4)
+    # plot_predicted_coordinates(images, coord_preds*4, coord*4)
+
+
+
 def main():
     dir_path = sys.argv[1]
     # try_obman(dir_path)
-    try_RHD(dir_path)
+    # try_RHD(dir_path)
+    try_plotting_stuff(dir_path)
 
 
 
