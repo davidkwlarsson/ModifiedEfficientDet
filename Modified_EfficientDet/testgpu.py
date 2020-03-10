@@ -86,14 +86,70 @@ def try_plotting_stuff(dir_path):
     # plot_predicted_hands_uv(images, coord_preds*4)
     # plot_predicted_coordinates(images, coord_preds*4, coord*4)
 
+import tensorflow as tf
 
+import time
+default_timeit_steps = 1000
+BATCH_SIZE = 16
+
+def timeit(ds, steps=default_timeit_steps):
+  start = time.time()
+  it = iter(ds)
+  for i in range(steps):
+    batch = next(it)
+    if i%10 == 0:
+      print('.',end='')
+  print()
+  end = time.time()
+
+  duration = end-start
+  print("{} batches: {} s".format(steps, duration))
+  print("{:0.5f} Images/s".format(BATCH_SIZE*steps/duration))
+
+def try_tfdata(dir_path):
+    print(tf.__version__)
+    xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))
+    length = len(xyz_list)
+    # xyz_list *= 4
+    xyz_data = tf.data.Dataset.from_tensor_slices(xyz_list)
+    
+    image_path = os.path.join(dir_path, 'training/rgb/*')
+    list_ds = tf.data.Dataset.list_files(image_path, shuffle = False)
+    # for f in list_ds.take(5):
+    #     print(f.numpy())
+
+    list_ds = list_ds.take(length)
+
+    def get_tfimage(image_path):
+        img = tf.io.read_file(image_path)
+        img = tf.image.decode_png(img,channels = 3)
+        img = tf.image.convert_image_dtype(img, tf.float32)
+        img = tf.image.resize(img, [224,224])
+        return img
+    list_ds = list_ds.map(get_tfimage)
+
+    # for image in list_ds.take(1):
+    #     print("Image shape: ", image.numpy().shape)
+
+    labeled_ds = tf.data.Dataset.zip((list_ds, xyz_data))
+    labeled_ds = labeled_ds.shuffle(buffer_size = length)
+    labeled_ds = labeled_ds.repeat()
+    labeled_ds = labeled_ds.batch(16)
+
+    AUTOTUNE = tf.data.experimental.AUTOTUNE
+    labeled_ds = labeled_ds.prefetch(buffer_size = AUTOTUNE)
+    # labeled_ds = labeled_ds.cache(filename) # Save to memory first time running trough then access that.
+    # for image,label in labeled_ds.take(1):
+    #     print("Image shape: ", image.numpy().shape)
+    #     print(label)
+    timeit(labeled_ds)
 
 def main():
     dir_path = sys.argv[1]
     # try_obman(dir_path)
     # try_RHD(dir_path)
-    try_plotting_stuff(dir_path)
-
+    # try_plotting_stuff(dir_path)
+    try_tfdata(dir_path)
 
 
 if __name__ == '__main__':
