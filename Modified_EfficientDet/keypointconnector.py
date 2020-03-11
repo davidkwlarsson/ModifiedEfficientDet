@@ -39,16 +39,20 @@ class ConnectKeypointLayer(layers.Layer):
             self.conv2.append(tf.keras.layers.Conv2D(32, (1, 1), padding='same', activation='relu'))
 
 
+    def get_config(self):
+        base_config = super(ConnectKeypointLayer, self).get_config()
+        base_config['output_dim'] = self.output_dim
+        return base_config
 
     def build(self, input_shape):
         # Create a trainable weight variable for this layer.
-        self.W = list()
-        for i in range(21):
-            self.W.append(self.add_weight(name='lambda',
-                                     shape=[1,
-                                      1],
-                                      initializer='uniform',
-                                     trainable=True))
+        # self.W = list()
+        # for i in range(21):
+        self.W = self.add_weight(name='lambda',
+                                    shape=[21,
+                                    1],
+                                    initializer='uniform',
+                                    trainable=True)
 
         self.built = True
 
