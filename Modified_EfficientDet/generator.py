@@ -37,6 +37,10 @@ def dump(projection_path, projection_list):
     print('Dumped %d joints projections to %s' % (len(projection_list), projection_path))
 
 
+
+
+
+
 def main():
     base_path = sys.argv[1]
 

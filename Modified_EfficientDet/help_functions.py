@@ -9,9 +9,20 @@ from utils.fh_utils import *
 import skimage.io as io
 from generator import projectPoints, json_load, _assert_exist
 import cv2
+from csv import writer
+from csv import reader
+from numpy import genfromtxt
+
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
+import time
+from scipy.sparse import lil_matrix
+
+
+from skimage import img_as_ubyte
+from numpy import asarray
+from numpy import savetxt
 
 
 
@@ -31,7 +42,7 @@ def plot_heatmaps_with_coords(images, heatmaps, coords):
     plt.imshow(hm)
     plt.scatter(coords[0][0::2], coords[0][1::2], marker='o', color='r', s=2)
     plt.colorbar()
-    print(coords[0][0:2])
+  #print(coords[0][0:2])
     plt.show()
 
 
@@ -69,6 +80,74 @@ def read_img(idx, base_path, set_name, version=None):
     _assert_exist(img_rgb_path)
     return io.imread(img_rgb_path)
 
+def read_hm(idx, base_path, set_name, version=None):
+    if version is None:
+        version = sample_version.gs
+
+    if set_name == 'evaluation':
+        assert version == sample_version.gs, 'This the only valid choice for samples from the evaluation split.'
+
+    img_rgb_path = os.path.join(base_path, set_name, 'rgb',
+                                '%08d.jpg' % sample_version.map_id(idx, version))
+    _assert_exist(img_rgb_path)
+    hm = []
+    for i in range(21):
+        img_hm_path = os.path.join(base_path, set_name, 'hm',
+                                   '%08d_%d.jpg' % (sample_version.map_id(idx, version), i))
+
+        im = io.imread(img_hm_path)
+        hm.append(io.imread(img_hm_path))
+
+
+    return np.transpose(np.array(hm), (1, 2, 0))
+
+
+def append_list_as_row(file_name, list_of_elem):
+    # Open file in append mode
+    f = open(file_name, 'ab')
+
+    np.savetxt(f, np.reshape(list_of_elem, (21*224*224)), delimiter=",")#np.reshape(list_of_elem, 21, 224*224), delimiter=",")
+    f.close()
+  #  with open(file_name, 'a+', newline='') as write_obj:
+        # Create a writer object from csv module
+    #    csv_writer = writer(write_obj)
+        #for i in list_of_elem:
+    #    csv_writer.writerow(list_of_elem)
+       # csv_writer.writerow("\n")
+        # Add contents of list as last row in the csv file
+
+
+
+
+def read_csv(file_name='hm.csv'):
+
+    # open file in read mode
+    hm = genfromtxt(file_name, delimiter=',')
+   # with open(file_name, 'r') as read_obj:
+        # pass the file object to reader() to get the reader object
+    #    csv_reader = reader(read_obj)
+    #    # Iterate over each row in the csv using reader object
+
+     #   for row in csv_reader:
+     #       hm.append(row)
+            # row variable is a list that represents a row in csv
+        #    print(row)
+    return hm
+
+def write_img(hm, idx, base_path, set_name, version=None):
+    if version is None:
+        version = sample_version.gs
+
+    if set_name == 'evaluation':
+        assert version == sample_version.gs, 'This the only valid choice for samples from the evaluation split.'
+
+  #  for i in range(hm.shape[2]):
+        #img_hm_path = os.path.join(base_path, set_name, 'hm',
+                      #             '%08d_%d.jpg' % (sample_version.map_id(idx, version), i))
+       # img_as_ubyte(hm[:, :, i]
+      #  io.imsave(img_hm_path, img_as_ubyte(hm[:,:,i]), check_contrast=False)
+
+
 
 def heatmaps_to_coord(heatmaps):
     coords = [[] for x in range(len(heatmaps))]
@@ -76,10 +155,9 @@ def heatmaps_to_coord(heatmaps):
 
         for i in range(21):
             ind = np.unravel_index(np.argmax(heatmaps[j][:, :, i], axis=None), heatmaps[j][:, :, i].shape)
-
             coords[j].append(ind[1])
             coords[j].append(ind[0])
-    print(coords)
+   # print(coords)
     #print('coords')
     return np.array(coords)
 
@@ -105,35 +183,25 @@ def get_depthmaps(uv,xyz_list):
 
 # NOTE that they are not symmetric atm..
 # check by running test
-def create_gaussian_hm(uv, w, h):
+
+
+
+
+def create_gaussian_hm(uv, w, h, radius, hm_small):
     hm_list = list()
     hm_list2 = list()
     hm_list3 = list()
     py = 50
     px = 50
     im = np.zeros((w+2*px, h+2*py))
-    std = 2
-    radius = 6
-
-    for coord in uv:
-        u = coord[1]+px
-        v = coord[0]+py
-        hm_small = np.zeros((radius * 2 + 1, radius * 2 + 1))
-        xc, yc = (radius + 1, radius + 1)
-        for x in range(radius * 2 + 1):
-            for y in range(radius * 2 + 1):
-                dist = math.sqrt((x - xc) ** 2 + (y - yc) ** 2)
-                if dist < radius:
-                    scale = 1  # otherwise predict only zeros
-                    hm_small[x][y] = scale * math.exp(-dist ** 2 / (2 * std ** 2)) / (std * math.sqrt(2 * math.pi))
-        m = np.max(hm_small)
-        for x in range(radius * 2 + 1):
-            for y in range(radius * 2 + 1):
-                hm_small[x][y] = hm_small[x][y]/m
+   # im = lil_matrix((w+2*px, h+2*py))
         #hm_small = hm_small/np.argmax(np.argmax(hm_small))
         # plt.imshow(hm_small)
         # plt.show()
         # print('here')
+    for coord in uv:
+        u = coord[0]+px
+        v = coord[1]+py
         try:
             xc_im = np.round(u)
             yc_im = np.round(v)
@@ -156,7 +224,9 @@ def create_gaussian_hm(uv, w, h):
 
     # plt.imshow(im)
     # plt.show()
+   # return np.array(hm_list)
     return np.transpose(np.array(hm_list3), (1, 2, 0)), np.transpose(np.array(hm_list2), (1, 2, 0)), np.transpose(np.array(hm_list), (1, 2, 0))
+    #return  np.transpose(np.array(hm_list), (1, 2, 0))
 
 def create_depth_hm(hm_2d, z_root, z):
     # hm_2d list of k hms
@@ -189,12 +259,14 @@ def create_onehot(uv, w, h):
             print("\n Coordinates where out of range : " , coord[0], coord[1])
     return temp_im, temp_im2, temp_im3
 
+
 def get_depth(xyz_list):
     depth = np.zeros(21)
     xyz = np.array(xyz_list)
     for j in range(21):
         depth[j] = xyz[j, 2]
     return depth
+
 
 def get_data(dir_path, num_samples, multi_dim = True):
     print("Collecting data ... \n")
@@ -205,6 +277,7 @@ def get_data(dir_path, num_samples, multi_dim = True):
     xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))
     K_list = json_load(os.path.join(dir_path, 'training_K.json'))
     n = 0
+    hm_small = create_gaussian_blob()
     for i in range(num_samples, num_samples+200):
         # load images
         img = read_img(i, dir_path, 'training')
@@ -212,6 +285,7 @@ def get_data(dir_path, num_samples, multi_dim = True):
         uv_i = projectPoints(xyz_list[i], K_list[i])
         uv.append(uv_i)
         hm_tmp = create_gaussian_hm(uv_i,224,224)
+
         hm.append(hm_tmp[2])
         coords.append([])
         for j, coord in enumerate(uv_i):
@@ -270,7 +344,11 @@ def get_evalImages(dir_path, num_samples):
     return np.array(imgs)
 
 
+
 def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
+   # hm_all = np.array(read_csv(dir_path+'/hm.csv'))
+
+
     if data_set == 'training':
         xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[:-560]
         xyz_list *= 4
@@ -290,7 +368,6 @@ def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
     elif data_set == 'evaluation':
         xyz_list = json_load(os.path.join(dir_path, 'evaluation_xyz.json'))
         num_samples = len(xyz_list)
-        print("Total number of evaluation samples: ", num_samples)
         K_list = json_load(os.path.join(dir_path, 'evaluation_K.json'))
 
     else:
@@ -299,22 +376,29 @@ def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
         
     tmp = True
     i = 0
+
+   # tic = time.perf_counter()
+
+   # toc = time.perf_counter()
+   # print(f"hm_small{toc - tic:0.4f} seconds")
+
     while True:
+      #  tic = time.perf_counter()
+
         batch_x = []
        # batch_y = [[], [], [], []]
         batch_y = [[], [], []]
+        #batch_y = [[]]
         for j in range(batch_size):
             idx = indicies[i+j]
+           # print(idx)
             img = read_img(idx, dir_path, 'training')/255.0
+           # hm2 = read_hm(idx, dir_path, 'training')/255.0
             uv = projectPoints(xyz_list[i+j], K_list[i+j])
             #depth = get_depth(xyz_list[i+j])
             #onehots = create_onehot(uv, 56, 56)
-            hm = create_gaussian_hm(uv, 224, 224)
-            if tmp:
-               # plot_predicted_heatmaps_tmp(hm[0],onehots[0])
-               # print(uv)
-                tmp = False
-           # z = []
+            hm = create_gaussian_hm(uv, 224, 224, radius, hm_small)
+            # z = []
            # for k in range(21):
                 # save depth coordinates
                # d = xyz_list[i+j][0][2] -xyz_list[i+j][k][2]
@@ -336,6 +420,81 @@ def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
             if i+j == num_samples-1:
                 i = -j
         i += batch_size
+        #toc = time.perf_counter()
+
+       # print(f"one generator {toc - tic:0.4f} seconds")
+
+        yield (np.array(batch_x), batch_y)
+
+
+def dataGenerator_save_hm(dir_path, batch_size=16, data_set='training'):
+
+    if data_set == 'training':
+        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))
+        xyz_list *= 4
+        num_samples = len(xyz_list)
+        K_list = json_load(os.path.join(dir_path, 'training_K.json'))
+        K_list *= 4
+        indicies = [i for i in range(32560)] + [i for i in range(32560, 65120)] + [i for i in range(65120, 97680)] + [i
+                                                                                                                      for
+                                                                                                                      i
+                                                                                                                      in
+                                                                                                                      range(
+                                                                                                                          97680,
+                                                                                                       130240)]
+        print("Total number of training samples: ", num_samples, " and ", len(indicies))
+    elif data_set == 'evaluation':
+        xyz_list = json_load(os.path.join(dir_path, 'evaluation_xyz.json'))
+        num_samples = len(xyz_list)
+        print("Total number of evaluation samples: ", num_samples)
+        K_list = json_load(os.path.join(dir_path, 'evaluation_K.json'))
+
+    else:
+        print("No specified data found!")
+        sys.exit()
+
+    tmp = True
+    i = 0
+    std = 2
+    radius = 6
+    hm_small = create_gaussian_blob(std, radius)
+
+    while True:
+        batch_x = []
+        # batch_y = [[], [], [], []]
+        batch_y = [[], [], []]
+        for j in range(batch_size):
+            idx = indicies[i + j]
+         #   print(idx)
+            img = read_img(idx, dir_path, 'training') / 255.0
+            uv = projectPoints(xyz_list[i + j], K_list[i + j])
+            uv = uv[:, ::-1]
+            hm = create_gaussian_hm(uv, 224, 224, radius, hm_small)
+            #write_img(hm, idx, dir_path, 'training')
+            #hm2 = read_hm(idx, dir_path, 'training')/255.0
+           # append_list_as_row(dir_path+'/hm.csv', hm)
+            # z = []
+            # for k in range(21):
+            # save depth coordinates
+            # d = xyz_list[i+j][0][2] -xyz_list[i+j][k][2]
+            # d = xyz_list[i+j][k][2]
+            # z.append(d) # TODO: correct indices?
+            # if tmp:
+            # print(z[0]-z[k])
+            #   tmp = False
+            # print(np.shape(onehots[2]))
+            #      depthmap = create_depth_hm(hm[2], z[0], z)#get_depthmaps(uv, xyz_list[idx])
+
+            batch_x.append(img)
+            batch_y[0].append(hm)
+            batch_y[1].append(uv)
+            batch_y[2].append(hm)
+            #  batch_y[3].append(depthmap)
+            # batch_y[3].append(z)
+            if i + j == num_samples - 1:
+                i = -j
+        i += batch_size
+
         yield (np.array(batch_x), batch_y)
 
 
@@ -377,19 +536,28 @@ def plot_hm_with_images(hm_pred, hm_true, img, ind=0):
     n = 0
     for i in range(1,rows*3,3):
         fig.add_subplot(rows, columns, i)
+       # print(ind)
+       # print(n)
         plt.imshow(hm_pred[ind][:, :, n])
         plt.colorbar()
         fig.add_subplot(rows, columns, i+1)
         plt.imshow(hm_true[ind][:, :, n])
-        plt.colorbar()
-        fig.add_subplot(rows, columns, i + 2)
-        plt.imshow(img[ind])
-        #for i in range(21):
         ind_pred = np.unravel_index(np.argmax(hm_pred[ind][:, :, n], axis=None), hm_pred[ind][:, :, n].shape)
         ind_true = np.unravel_index(np.argmax(hm_true[ind][:, :, n], axis=None), hm_true[ind][:, :, n].shape)
         plt.scatter(ind_pred[1], ind_pred[0], c='r', s=2)
         plt.scatter(ind_true[1], ind_true[0], c='b', s=2)
+       # print('-----')
+       # print(ind_pred[1], ind_pred[0])
 
+        plt.colorbar()
+        fig.add_subplot(rows, columns, i + 2)
+        plt.imshow(img[ind])
+        #for i in range(21):
+       # ind_pred = np.unravel_index(np.argmax(hm_pred[ind][:, :, n], axis=None), hm_pred[ind][:, :, n].shape)
+       # ind_true = np.unravel_index(np.argmax(hm_true[ind][:, :, n], axis=None), hm_true[ind][:, :, n].shape)
+        plt.scatter(ind_pred[1], ind_pred[0], c='r', s=2)
+        plt.scatter(ind_true[1], ind_true[0], c='b', s=2)
+      #  print(ind_pred[1], ind_pred[0])
         n += 1
     #plt.show()
     plt.savefig('extended_hm'+str(ind)+'.png')
@@ -406,6 +574,7 @@ def plot_predicted_heatmaps_tmp(preds, heatmaps):
     fig.add_subplot(1, 2, 1 + 1)
     plt.imshow(heatmaps[:, :, 1])
     plt.colorbar()
+
     plt.show()
     plt.savefig('heatmaps.png')
 
@@ -458,7 +627,7 @@ def plot_predicted_hands(images, coord_preds):
         plt.imshow(images[i - 1])
         # nesed to project onto image..
         one_pred = [coord_preds[i-1][0::2], coord_preds[i-1][1::2]]
-        plot_hand(ax, np.transpose(np.array(one_pred)), order='uv')
+        plot_hand(ax, np.transpose(np.array(one_pred)))
 
 
     #plt.show()
@@ -466,7 +635,7 @@ def plot_predicted_hands(images, coord_preds):
 
 
 
-def plot_predicted_hands_uv(images, coord_preds):
+def plot_predicted_hands_uv(images, coord_preds, name):
     fig = plt.figure(figsize=(8, 8))
     columns = 5
     rows = 2
@@ -476,12 +645,12 @@ def plot_predicted_hands_uv(images, coord_preds):
             plt.imshow(images[i - 1])
             # need to project onto image..
             one_pred = [coord_preds[i-1][0::2], coord_preds[i-1][1::2]]
-            plot_hand(ax, np.transpose(np.array(one_pred)), order='uv')
+            plot_hand(ax, np.transpose(np.array(one_pred)),order='uv')
         except:
             print('error')
             continue
-    plt.savefig('hands_uv.png')
-    plt.show()
+    plt.savefig(name)
+  #plt.show()
 
 
 def add_depth_to_coords(coords, depth):

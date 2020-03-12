@@ -1,0 +1,10 @@
+
+scp -r Modified_EfficientDet/ sofie.hellmark@192.168.1.82:dev/
+
+
+
+docker build --rm -f dockerfile -t mytensorflow .
+
+sudo docker run --gpus all -it -v /home/:/tmp sofie:latest
+
+python3 train_s.py ../../FreiHAND_pub_v2/

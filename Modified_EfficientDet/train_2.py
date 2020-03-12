@@ -27,7 +27,7 @@ import skimage.io as io
 import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
-
+import cv2
 from utils.fh_utils import *
 from help_functions import *
 
@@ -114,15 +114,13 @@ def main():
 
     # images, heatmaps, heatmaps2,heatmaps3, coord = get_trainData(dir_path, 100, multi_dim=True)
     #get_session()
-    xyz_list, K_list, indicies, num_samples = get_raw_data(dir_path, 'training')
 
-    image_tensor = create_image_tensor(dir_path,indicies, batch_size=16)
-    dataset = tf.data.Dataset.from_generator(gen_function, (tf.float32, tf.float32), args=image_tensor)
-    traingen = myfirstdataGenerator(dir_path, batch_size = 16, data_set = 'training')
-    validgen = myfirstdataGenerator(dir_path, batch_size= 16, data_set = 'validation')
+   # hms, imgs = get_training_data(dir_path)
+   # traingen = testthisoneGenerator(imgs, hms, batch_size = 16)
+   # validgen = testthisoneGenerator(imgs, hms, batch_size= 16)
 
-   # traingen = mydataGenerator(dir_path, batch_size=16, data_set='training')
-   # validgen = mydataGenerator(dir_path, batch_size=16, data_set='training')
+    traingen = mytfdataGenerator(dir_path, batch_size=16, data_set='training')
+    validgen = mytfdataGenerator(dir_path, batch_size=16, data_set='training')
   #  dataset = tf.data.Dataset.from_generator(
       # traingen, (tf.int64, tf.float64))
 
@@ -147,10 +145,10 @@ def main():
     print("Compiling model ... \n")
     # losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce}
     #losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce, 'depthmaps' : 'mean_squared_error'}
-    losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce}#, 'multiply' : weighted_bce}
+    losses = {"normalsize" : weighted_bce}#, 'multiply' : weighted_bce}
     #losses = {'size3':weighted_bce}#, 'multiply' : weighted_bce}
     # lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0}
-    lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0}#, 'multiply' : 1.0}
+    lossWeights = {"normalsize" : 1.0}#, 'multiply' : 1.0}
     #lossWeights = { 'size3' : 1.0}#, 'multiply' : 1.0}
     #lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0, 'depthmaps' : 1.0}
     # focalloss = SigmoidFocalCrossEntropy(reduction=Reduction.SUM_OVER_BATCH_SIZE)
@@ -174,22 +172,26 @@ def main():
 
     callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
     history = model.fit(traingen, validation_data = validgen, validation_steps = 18
-                    ,steps_per_epoch = 10, epochs = 3, verbose=1, callbacks=[callback])
+                    ,steps_per_epoch = 4000, epochs = 1, verbose=1, callbacks=[callback])
     #toc = time.perf_counter()
     # model.save_weights('handposenet')
-   # validgen2 = dataGenerator(dir_path, batch_size= 20, data_set = 'validation')
+    validgen2 = mytfdataGenerator(dir_path, batch_size=16, data_set = 'validation')
 
-    (images, targets) = next(traingen)
-    (preds, preds2, preds3) = model.predict(images)
-   # preds3 = model.predict(images)
-    true_data = targets[2]
+    (images, targets) = next(validgen2)
+    #(preds, preds2, preds3) = model.predict(images)
+    preds3 = model.predict(images)
+    true_data = targets[0]
+    new_images = []
+    for (i,im) in enumerate(images):
+        #print(im.shape)
+        new_images.append(cv2.resize(im,(56,56), interpolation=cv2.INTER_CUBIC))
     #(preds, preds2 ,preds3, depth) = model.predict(images)
     try:
        # print(f"fit model {toc - tic:0.4f} seconds")
         plot_acc_loss(history)
     except:
         print('could not plot loss')
-    
+    images = new_images
     # get coordinates from predictions
   #  print(preds3[0])
   #  print('-------------------------')
@@ -210,7 +212,11 @@ def main():
 
 
     # Skeleton plot
-    plot_predicted_hands(images, coord)
+   # print('im size: ', images.shape)
+    #print(coord)
+    #print(np.shape(coord))
+    plot_predicted_hands_uv(images, coord_preds, 'hands_as_uv_pred.png')
+    plot_predicted_hands_uv(images, coord, 'hands_as_uv.png')
 
     #xyz_pred = add_depth_to_coords(coord_preds[0], depth[0])
     #draw_3d_skeleton(xyz_pred, (224*2,224*2))
