@@ -92,6 +92,40 @@ import time
 default_timeit_steps = 1000
 BATCH_SIZE = 16
 
+
+def tf_onehots(xyz, K):
+
+    def tf_projectPoints(xyz, K): 
+        """ Project 3D coordinates into image space. """
+        uv = tf.transpose(tf.linalg.matmul(K, tf.transpose(xyz)))
+        return uv[:, :2] / uv[:, -1:]
+    
+    def tf_create_onehot(uv,h,w):
+        uv = uv[:,::-1]
+        temp_im = tf.zeros(shape = (w,h,21))
+        # temp_im2 = tf.zeros(shape = (w*2,h*2,21))
+        # temp_im3 = tf.zeros(shape = (w*4,h*4,21))
+        j = 0
+        for coord in uv:
+            try:
+                temp_im[int(coord[0]/4), int(coord[1]/4),j] = 1
+                # temp_im2[int(coord[0]/2), int(coord[1]/2),j] = 1
+                # temp_im3[int(coord[0]), int(coord[1]),j] = 1
+                j += 1
+            except:
+            #     print("\n Coordinates where out of range : " , coord[0], coord[1])
+                j += 1
+        return temp_im #, temp_im2, temp_im3
+
+    
+    uv = tf_projectPoints(xyz, K)
+    
+    
+    onehots = tf_create_onehot(uv,56,56)
+    
+    return onehots #[0], onehots[1], onehots[2]
+
+
 def timeit(ds, steps=default_timeit_steps):
   start = time.time()
   it = iter(ds)
@@ -107,11 +141,18 @@ def timeit(ds, steps=default_timeit_steps):
   print("{:0.5f} Images/s".format(BATCH_SIZE*steps/duration))
 
 def try_tfdata(dir_path):
-    print(tf.__version__)
-    xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))
+    xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))#[:300]
+    K_list = json_load(os.path.join(dir_path, 'training_K.json'))#[:300]
     length = len(xyz_list)
     # xyz_list *= 4
     xyz_data = tf.data.Dataset.from_tensor_slices(xyz_list)
+    K_data = tf.data.Dataset.from_tensor_slices(K_list)
+    heatmaps_ds = tf.data.Dataset.zip((xyz_data, K_data))
+    # heatmaps_ds = heatmaps_ds.as_numpy_iterator()
+
+    heatmaps_ds = heatmaps_ds.map(tf_onehots)
+    for heats in heatmaps_ds.take(1):
+        print(heats.numpy())
     
     image_path = os.path.join(dir_path, 'training/rgb/*')
     list_ds = tf.data.Dataset.list_files(image_path, shuffle = False)
@@ -131,13 +172,14 @@ def try_tfdata(dir_path):
     # for image in list_ds.take(1):
     #     print("Image shape: ", image.numpy().shape)
 
-    labeled_ds = tf.data.Dataset.zip((list_ds, xyz_data))
+    labeled_ds = tf.data.Dataset.zip((list_ds, heatmaps_ds))
     labeled_ds = labeled_ds.shuffle(buffer_size = length)
     labeled_ds = labeled_ds.repeat()
     labeled_ds = labeled_ds.batch(16)
 
     AUTOTUNE = tf.data.experimental.AUTOTUNE
     labeled_ds = labeled_ds.prefetch(buffer_size = AUTOTUNE)
+    # filename = './heatmaps.tfcache'
     # labeled_ds = labeled_ds.cache(filename) # Save to memory first time running trough then access that.
     # for image,label in labeled_ds.take(1):
     #     print("Image shape: ", image.numpy().shape)
@@ -150,6 +192,8 @@ def main():
     # try_RHD(dir_path)
     # try_plotting_stuff(dir_path)
     try_tfdata(dir_path)
+    # traingen = dataGenerator(dir_path, batch_size = 16, data_set = 'training')
+    # timeit(traingen)
 
 
 if __name__ == '__main__':
