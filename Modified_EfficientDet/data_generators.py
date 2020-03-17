@@ -6,7 +6,7 @@ import tensorflow as tf
 import math
 
 from generator import projectPoints
-from help_functions import read_img, create_gaussian_hm
+from help_functions import read_img
 from testing_scatter import insert_gaussian, calculate_bbox, _central_crop, \
     create_gaussian
 import matplotlib.pyplot as plt
@@ -274,7 +274,8 @@ def myfirstdataGenerator(dir_path, batch_size=16, data_set='training'):
 
 
 def get_raw_data(dir_path, data_set='training'):
-
+    print(dir_path)
+    dir_path = dir_path.decode('ascii')
     if data_set == 'training':
         xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[:-560]
         xyz_list *= 4
@@ -312,11 +313,11 @@ def get_raw_data(dir_path, data_set='training'):
 
 
 
-def create_image_tensor(dir_path, indicies, num_samples,  batch_size=16):
-    image_path = os.path.join(dir_path, 'training/rgb/*')
+def create_image_dataset(dir_path, num_samples):
+    image_path = dir_path + 'training/rgb/*'
     list_ds = tf.data.Dataset.list_files(image_path, shuffle=False)
-    for f in list_ds.take(5):
-         print(f.numpy())
+   # for f in list_ds.take(5):
+   #      print(f.numpy())
 
     list_ds = list_ds.take(num_samples)
 
