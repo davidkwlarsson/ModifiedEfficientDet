@@ -217,13 +217,13 @@ def efficientdet(phi, num_classes=20, weighted_bifpn=False, freeze_bn=False, sco
 
 
     feature2 = layers.UpSampling2D()(feature3) # from 28 -> 56
-    #feature2_cont = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature2)
-    feature2 = layers.Conv2D(21, kernel_size = 1, strides = 1, padding = "same", activation = 'sigmoid', name = 'normalsize')(feature2)
-    #feature1 = layers.UpSampling2D()(feature2_cont) # from 56 -> 112
-    #feature1_cont = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature1)
-    #feature1 = layers.Conv2D(21, kernel_size = 1, strides = 1, padding = "same", activation = 'sigmoid', name = 'size2')(feature1)
-    #feature_cont = layers.UpSampling2D()(feature1_cont) #from 112 -> 224
-    #feature = layers.Conv2D(21, kernel_size = 1, strides = 1, padding = "same", activation = 'sigmoid', name = 'size3')(feature_cont)
+    feature2_cont = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature2)
+   # feature2 = layers.Conv2D(21, kernel_size = 1, strides = 1, padding = "same", activation = 'sigmoid', name = 'normalsize')(feature2)
+    feature1 = layers.UpSampling2D()(feature2_cont) # from 56 -> 112
+    feature1_cont = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature1)
+  #  feature1 = layers.Conv2D(21, kernel_size = 1, strides = 1, padding = "same", activation = 'sigmoid', name = 'size2')(feature1)
+    feature_cont = layers.UpSampling2D()(feature1_cont) #from 112 -> 224
+    feature = layers.Conv2D(21, kernel_size = 1, strides = 1, padding = "same", activation = 'softmax', name = 'size3')(feature_cont)
     # depth = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'linear', name = 'depthmaps')(feature_cont)
 
 
@@ -257,8 +257,8 @@ def efficientdet(phi, num_classes=20, weighted_bifpn=False, freeze_bn=False, sco
     
     # regression = regress_head(feature3)
 
-    #model = models.Model(inputs=[image_input], outputs=[feature])
-    model = models.Model(inputs=[image_input], outputs=[feature2])
+    model = models.Model(inputs=[image_input], outputs=[feature])
+   # model = models.Model(inputs=[image_input], outputs=[feature2])
 
     return model
 

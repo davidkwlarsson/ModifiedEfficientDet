@@ -8,6 +8,7 @@ import numpy as np
 from utils.fh_utils import *
 import skimage.io as io
 from generator import projectPoints, json_load, _assert_exist
+from data_generators import create_gaussian_blob
 import cv2
 from csv import writer
 from csv import reader
@@ -24,13 +25,42 @@ from skimage import img_as_ubyte
 from numpy import asarray
 from numpy import savetxt
 
+def evaluate_result(dir_path, preds):
+    predictions = []
+    n = 0
+
+    # Sum all heatmaps for the joints of one hand and save as figure
+    for sample in preds:
+        predictions.append(sample)
+        sum = 0
+        for k in range(21):
+            #  print(np.shape(sample))
+            sum = sum + sample[:, :, k]
+        plt.figure()
+        plt.imshow(sum)
+        plt.colorbar()
+        plt.savefig('tf_sum_fig_preds_hm' + str(n) + '.png')
+        n = n + 1
+
+    # From the predictions extract coordinates
+    coord_preds = heatmaps_to_coord(predictions)
+    # Get the images that corresponds to test data
+    # Get the true coordinates
+    images, uv, hm, c = get_data(dir_path, 10)
+    coord = uv
+    #images = get_evalImages(dir_path, 10)
+    # Plot the predicted result as skeleton
+    plot_predicted_hands_uv(images, coord_preds, 'hands_as_uv_pred.png')
+    # Plot the images together with true and predicted heatmap
+    plot_hm_with_images(predictions, predictions, images, 4)
+    # bplot of hand
+    plot_predicted_coordinates(images, coord_preds, coord)
+
 
 
 def plot_heatmaps_with_coords(images, heatmaps, coords):
-    # Here I display heatmaps and coordinates to check that the heatmaps are correctly generated
-    #get data
-    #dir_path = sys.argv[1]
-    #images, heatmaps, coords = get_trainData(dir_path,multi_dim=True)
+    """Here the heatmaps are displayed together with the coordinates to
+    check that the heatmaps are correctly generated"""
     hm = heatmaps[0][:, :, 0]
     for i in range(1,21):
         hm += heatmaps[0][:, :, i]
@@ -47,7 +77,7 @@ def plot_heatmaps_with_coords(images, heatmaps, coords):
 
 
 def plot_acc_loss(history):
-    # Plot acc and loss vs epochs
+    """Plot acc and loss vs epochs"""
     #acc = history.history['acc']
     #val_acc = history.history['val_acc']
     loss = history.history['loss']
@@ -80,112 +110,18 @@ def read_img(idx, base_path, set_name, version=None):
     _assert_exist(img_rgb_path)
     return io.imread(img_rgb_path)
 
-def read_hm(idx, base_path, set_name, version=None):
-    if version is None:
-        version = sample_version.gs
-
-    if set_name == 'evaluation':
-        assert version == sample_version.gs, 'This the only valid choice for samples from the evaluation split.'
-
-    img_rgb_path = os.path.join(base_path, set_name, 'rgb',
-                                '%08d.jpg' % sample_version.map_id(idx, version))
-    _assert_exist(img_rgb_path)
-    hm = []
-    for i in range(21):
-        img_hm_path = os.path.join(base_path, set_name, 'hm',
-                                   '%08d_%d.jpg' % (sample_version.map_id(idx, version), i))
-
-        im = io.imread(img_hm_path)
-        hm.append(io.imread(img_hm_path))
-
-
-    return np.transpose(np.array(hm), (1, 2, 0))
-
-
-def append_list_as_row(file_name, list_of_elem):
-    # Open file in append mode
-    f = open(file_name, 'ab')
-
-    np.savetxt(f, np.reshape(list_of_elem, (21*224*224)), delimiter=",")#np.reshape(list_of_elem, 21, 224*224), delimiter=",")
-    f.close()
-  #  with open(file_name, 'a+', newline='') as write_obj:
-        # Create a writer object from csv module
-    #    csv_writer = writer(write_obj)
-        #for i in list_of_elem:
-    #    csv_writer.writerow(list_of_elem)
-       # csv_writer.writerow("\n")
-        # Add contents of list as last row in the csv file
-
-
-
-
-def read_csv(file_name='hm.csv'):
-
-    # open file in read mode
-    hm = genfromtxt(file_name, delimiter=',')
-   # with open(file_name, 'r') as read_obj:
-        # pass the file object to reader() to get the reader object
-    #    csv_reader = reader(read_obj)
-    #    # Iterate over each row in the csv using reader object
-
-     #   for row in csv_reader:
-     #       hm.append(row)
-            # row variable is a list that represents a row in csv
-        #    print(row)
-    return hm
-
-def write_img(hm, idx, base_path, set_name, version=None):
-    if version is None:
-        version = sample_version.gs
-
-    if set_name == 'evaluation':
-        assert version == sample_version.gs, 'This the only valid choice for samples from the evaluation split.'
-
-  #  for i in range(hm.shape[2]):
-        #img_hm_path = os.path.join(base_path, set_name, 'hm',
-                      #             '%08d_%d.jpg' % (sample_version.map_id(idx, version), i))
-       # img_as_ubyte(hm[:, :, i]
-      #  io.imsave(img_hm_path, img_as_ubyte(hm[:,:,i]), check_contrast=False)
-
 
 
 def heatmaps_to_coord(heatmaps):
+    """ Take max of heatmap and return its coordinates"""
     coords = [[] for x in range(len(heatmaps))]
     for j in range(len(heatmaps)):
-
         for i in range(21):
             ind = np.unravel_index(np.argmax(heatmaps[j][:, :, i], axis=None), heatmaps[j][:, :, i].shape)
             coords[j].append(ind[1])
             coords[j].append(ind[0])
-   # print(coords)
-    #print('coords')
+
     return np.array(coords)
-
-
-def heatmaps_to_depth(heatmaps):
-    depths = [[] for x in range(len(heatmaps))]
-    for j in range(len(heatmaps)):
-        for i in range(21):
-            depths[j].append(np.sum(heatmaps[j][:, :, i]))
-
-    return np.array(depths)
-
-def get_depthmaps(uv,xyz_list):
-    depths = np.zeros((224,224,21))
-    xyz = np.array(xyz_list)
-    for j,coord in enumerate(uv):
-        try:
-            depths[int(coord[0]),int(coord[1]),j] = xyz[j, 2]
-        except:
-            print("\n")
-
-    return depths
-
-# NOTE that they are not symmetric atm..
-# check by running test
-
-
-
 
 def create_gaussian_hm(uv, w, h, radius, hm_small):
     hm_list = list()
@@ -194,11 +130,6 @@ def create_gaussian_hm(uv, w, h, radius, hm_small):
     py = 50
     px = 50
     im = np.zeros((w+2*px, h+2*py))
-   # im = lil_matrix((w+2*px, h+2*py))
-        #hm_small = hm_small/np.argmax(np.argmax(hm_small))
-        # plt.imshow(hm_small)
-        # plt.show()
-        # print('here')
     for coord in uv:
         u = coord[0]+px
         v = coord[1]+py
@@ -267,7 +198,6 @@ def get_depth(xyz_list):
         depth[j] = xyz[j, 2]
     return depth
 
-
 def get_data(dir_path, num_samples, multi_dim = True):
     print("Collecting data ... \n")
     imgs = []
@@ -277,14 +207,15 @@ def get_data(dir_path, num_samples, multi_dim = True):
     xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))
     K_list = json_load(os.path.join(dir_path, 'training_K.json'))
     n = 0
-    hm_small = create_gaussian_blob()
+    gaussian = create_gaussian_blob(2, 3)
     for i in range(num_samples, num_samples+200):
         # load images
         img = read_img(i, dir_path, 'training')
         imgs.append(img)
         uv_i = projectPoints(xyz_list[i], K_list[i])
+        uv_i = uv_i[:, ::-1]
         uv.append(uv_i)
-        hm_tmp = create_gaussian_hm(uv_i,224,224)
+        hm_tmp = create_gaussian_hm(uv_i,224,224, 3, gaussian)
 
         hm.append(hm_tmp[2])
         coords.append([])
@@ -292,7 +223,7 @@ def get_data(dir_path, num_samples, multi_dim = True):
             # save coordinates
             coords[n].append(coord[0])
             coords[n].append(coord[1])
-        n=n+1
+        n = n+1
     return imgs, uv, np.array(hm), np.array(coords)
 
 
@@ -306,6 +237,7 @@ def get_trainData(dir_path, num_samples, multi_dim = True):
     hm_depth = []
     xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))
     K_list = json_load(os.path.join(dir_path, 'training_K.json'))
+    gaussian = create_gaussian_blob(2,3)
     for i in range(num_samples):
         # load images
         img = read_img(i, dir_path, 'training')
@@ -313,7 +245,7 @@ def get_trainData(dir_path, num_samples, multi_dim = True):
         # project 3d coords and create heatmaps
         uv = projectPoints(xyz_list[i], K_list[i])
         onehots = create_onehot(uv, 56, 56)
-        hm = create_gaussian_hm(uv,224,224)
+        hm = create_gaussian_hm(uv,224,224, 3, gaussian)
         heats.append(hm[2])
         heats2.append(onehots[1])
         heats3.append(onehots[2])
@@ -338,7 +270,7 @@ def get_evalImages(dir_path, num_samples):
     imgs = []
     for i in range(num_samples):
         # load images
-        img = read_img(i, dir_path, 'evaluate')
+        img = read_img(i, dir_path, 'training')
         imgs.append(img)
 
     return np.array(imgs)
@@ -397,7 +329,7 @@ def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
             uv = projectPoints(xyz_list[i+j], K_list[i+j])
             #depth = get_depth(xyz_list[i+j])
             #onehots = create_onehot(uv, 56, 56)
-            hm = create_gaussian_hm(uv, 224, 224, radius, hm_small)
+            hm = create_gaussian_hm(uv, 224, 224, 3,  hm_small)
             # z = []
            # for k in range(21):
                 # save depth coordinates

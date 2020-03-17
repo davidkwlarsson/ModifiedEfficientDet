@@ -14,6 +14,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 """
 
+
 import argparse
 from datetime import date
 import os
@@ -21,21 +22,24 @@ import sys
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 
 import tensorflow as tf
+
+#tf.enable_eager_execution()
+
 import json
 import glob
 import skimage.io as io
 import numpy as np
 from PIL import Image
-import matplotlib.pyplot as plt
-import cv2
+#import matplotlib.pyplot as plt
+#import cv2
 from utils.fh_utils import *
 from help_functions import *
-
-from tensorflow import keras
+from tf_generator import tf_generator, benchmark
+#from tensorflow import keras
 # import tensorflow.keras.backend as K
-from tensorflow.keras import backend as K
+#from tensorflow.keras import backend as K
 from tensorflow.keras.optimizers import Adam, SGD
-from tensorflow.compat.v1.keras.preprocessing.image import ImageDataGenerator
+#from tensorflow.compat.v1.keras.preprocessing.image import ImageDataGenerator
 # from tensorflow.keras.losses import Reduction
 # from tensorflow_addons.losses import SigmoidFocalCrossEntropy
 # from keras.optimizers import adam
@@ -105,7 +109,7 @@ def get_flops(model):
 def main():
     dir_path = sys.argv[1]
     phi = 0
-    init_gaussian()
+   # init_gaussian()
     cont_training = False
     weighted_bifpn = True
     freeze_backbone = False
@@ -118,9 +122,30 @@ def main():
    # hms, imgs = get_training_data(dir_path)
    # traingen = testthisoneGenerator(imgs, hms, batch_size = 16)
    # validgen = testthisoneGenerator(imgs, hms, batch_size= 16)
+    batch_size = 16
+    nbr_epochs = 1
+    num_samp = 128000
+    num_val_samp = 100
+    train_dataset = tf_generator(dir_path, batch_size=batch_size, num_samp=num_samp)
+    valid_dataset = tf_generator(dir_path, batch_size=batch_size, num_samp=num_val_samp)
+    traingen = train_dataset.prefetch(batch_size)
+    validgen = valid_dataset.prefetch(batch_size)
+    # Create an iterator over the dataset
+    #traingen = tf.compat.v1.data.make_one_shot_iterator(traingen)
+   # validgen = tf.compat.v1.data.make_one_shot_iterator(validgen)
 
-    traingen = mytfdataGenerator(dir_path, batch_size=16, data_set='training')
-    validgen = mytfdataGenerator(dir_path, batch_size=16, data_set='training')
+    # Initialize the iterator
+  #  traingen = traingen.prefetch(tf.data.experimental.AUTOTUNE)
+  #  validgen = validgen.prefetch(tf.data.experimental.AUTOTUNE)
+
+  #  traingen = iter(traingen)
+   # next_element = train_iterator.get_next()
+   # validgen = iter(traingen)
+    #next_element = val_iterator.get_next()
+
+
+    #traingen = mytfdataGenerator(dir_path, batch_size=16, data_set='training')
+    #validgen = mytfdataGenerator(dir_path, batch_size=16, data_set='training')
   #  dataset = tf.data.Dataset.from_generator(
       # traingen, (tf.int64, tf.float64))
 
@@ -145,10 +170,10 @@ def main():
     print("Compiling model ... \n")
     # losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce}
     #losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce, 'depthmaps' : 'mean_squared_error'}
-    losses = {"normalsize" : weighted_bce}#, 'multiply' : weighted_bce}
+    losses = {"size3" : weighted_bce}#, 'multiply' : weighted_bce}
     #losses = {'size3':weighted_bce}#, 'multiply' : weighted_bce}
     # lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0}
-    lossWeights = {"normalsize" : 1.0}#, 'multiply' : 1.0}
+    lossWeights = {"size3" : 1.0}#, 'multiply' : 1.0}
     #lossWeights = { 'size3' : 1.0}#, 'multiply' : 1.0}
     #lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0, 'depthmaps' : 1.0}
     # focalloss = SigmoidFocalCrossEntropy(reduction=Reduction.SUM_OVER_BATCH_SIZE)
@@ -160,7 +185,7 @@ def main():
     # loss=tf.keras.losses.SigmoidFocalCrossEntropy())
     # loss=[focal_loss(gamma = 2, alpha = 0.25)])
     # loss = 'mean_absolute_error'
-    print(model.summary())
+   # print(model.summary())
     print("Number of parameters in the model : ", model.count_params())
     # print(get_flops(model))
 
@@ -171,66 +196,20 @@ def main():
    # tic = time.perf_counter()
 
     callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
-    history = model.fit(traingen, validation_data = validgen, validation_steps = 18
-                    ,steps_per_epoch = 4000, epochs = 1, verbose=1, callbacks=[callback])
+    history = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
+                    ,steps_per_epoch = num_samp//batch_size, epochs = nbr_epochs, verbose=1, callbacks=[callback])
+    plot_acc_loss(history)
+
     #toc = time.perf_counter()
     # model.save_weights('handposenet')
-    validgen2 = mytfdataGenerator(dir_path, batch_size=16, data_set = 'validation')
-
-    (images, targets) = next(validgen2)
-    #(preds, preds2, preds3) = model.predict(images)
+   # validgen2 = mytfdataGenerator(dir_path, batch_size=16, data_set = 'validation')
+   # validgen2 = tf_generator(dir_path, batch_size=4)
+    validgen2 = create_image_tensor(dir_path, 10)
+    images = validgen2
+    images = images.batch(4)
     preds3 = model.predict(images)
-    true_data = targets[0]
-    new_images = []
-    for (i,im) in enumerate(images):
-        #print(im.shape)
-        new_images.append(cv2.resize(im,(56,56), interpolation=cv2.INTER_CUBIC))
-    #(preds, preds2 ,preds3, depth) = model.predict(images)
-    try:
-       # print(f"fit model {toc - tic:0.4f} seconds")
-        plot_acc_loss(history)
-    except:
-        print('could not plot loss')
-    images = new_images
-    # get coordinates from predictions
-  #  print(preds3[0])
-  #  print('-------------------------')
-  #  print(preds3[1])
-  #  print('-------------------------')
-    coord_preds = heatmaps_to_coord(preds3)
-  #  print(coord_preds) # all same :(
-    #epth_tarval = heatmaps_to_depth(targets[3])
-    #depth_predval = heatmaps_to_depth(depth)
-
-    coord = heatmaps_to_coord(true_data)
-
-    plot_predicted_heatmaps(preds3, true_data)
-    #plot_predicted_depthmaps(depth)
-    #print("Predicted first depthmap")
-    #print(depth_tarval[0])
-    #print(depth_predval[0])
-
-
-    # Skeleton plot
-   # print('im size: ', images.shape)
-    #print(coord)
-    #print(np.shape(coord))
-    plot_predicted_hands_uv(images, coord_preds, 'hands_as_uv_pred.png')
-    plot_predicted_hands_uv(images, coord, 'hands_as_uv.png')
-
-    #xyz_pred = add_depth_to_coords(coord_preds[0], depth[0])
-    #draw_3d_skeleton(xyz_pred, (224*2,224*2))
-   # print(coord)
-    # Scatter plot
-    plot_predicted_coordinates(images, coord_preds, coord)
-    # plot_predicted_coordinates(images, coord_upsamp*2, coord)
-
-    plot_hm_with_images(preds3, true_data, images, 0)
-    plot_hm_with_images(preds3, true_data, images, 1)
-    plot_hm_with_images(preds3, true_data, images, 2)
-    plot_hm_with_images(preds3, true_data, images, 3)
-    plot_hm_with_images(preds3, true_data, images, 4)
-
+    ### EVALUATE RESULT (not done)!
+    evaluate_result(dir_path, preds3)
 
 
 if __name__ == '__main__':
