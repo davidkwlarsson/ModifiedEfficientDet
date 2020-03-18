@@ -113,7 +113,7 @@ def tf_onehots(xyz, K):
                 # temp_im3[int(coord[0]), int(coord[1]),j] = 1
                 j += 1
             except:
-            #     print("\n Coordinates where out of range : " , coord[0], coord[1])
+                print("\n Coordinates where out of range : " , coord[0], coord[1])
                 j += 1
         return temp_im #, temp_im2, temp_im3
 
@@ -143,7 +143,7 @@ def timeit(ds, steps=default_timeit_steps):
 def try_tfdata(dir_path):
     xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))#[:300]
     K_list = json_load(os.path.join(dir_path, 'training_K.json'))#[:300]
-    length = len(xyz_list)
+    length = len(xyz_list)*4
     # xyz_list *= 4
     xyz_data = tf.data.Dataset.from_tensor_slices(xyz_list)
     K_data = tf.data.Dataset.from_tensor_slices(K_list)
@@ -151,15 +151,17 @@ def try_tfdata(dir_path):
     # heatmaps_ds = heatmaps_ds.as_numpy_iterator()
 
     heatmaps_ds = heatmaps_ds.map(tf_onehots)
-    for heats in heatmaps_ds.take(1):
-        print(heats.numpy())
+    heatmaps_ds = heatmaps_ds.repeat(4)
+    # for heats in heatmaps_ds.take(1):
+    #     print(heats.numpy())
     
     image_path = os.path.join(dir_path, 'training/rgb/*')
     list_ds = tf.data.Dataset.list_files(image_path, shuffle = False)
     # for f in list_ds.take(5):
     #     print(f.numpy())
 
-    list_ds = list_ds.take(length)
+
+    # list_ds = list_ds.take(length)
 
     def get_tfimage(image_path):
         img = tf.io.read_file(image_path)
@@ -173,8 +175,8 @@ def try_tfdata(dir_path):
     #     print("Image shape: ", image.numpy().shape)
 
     labeled_ds = tf.data.Dataset.zip((list_ds, heatmaps_ds))
-    labeled_ds = labeled_ds.shuffle(buffer_size = length)
-    labeled_ds = labeled_ds.repeat()
+    labeled_ds = labeled_ds.shuffle(buffer_size = length, reshuffle_each_iteration = True)
+    # labeled_ds = labeled_ds.repeat()
     labeled_ds = labeled_ds.batch(16)
 
     AUTOTUNE = tf.data.experimental.AUTOTUNE

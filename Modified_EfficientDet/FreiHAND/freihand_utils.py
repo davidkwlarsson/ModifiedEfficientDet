@@ -50,7 +50,7 @@ def dataGenerator(dir_path, batch_size = 16, data_set = 'training', shuffle = Tr
         nbr_samp = 0
         while j < batch_size:
             idx = indicies[i+j]
-            img = read_img(idx, dir_path, 'training')/255
+            img = read_img(idx, dir_path, data_set)/255
             uv = projectPoints(xyz_list[idx], K_list[idx])
             # depthmaps = get_depthmaps(uv, xyz_list[idx])
             try:

@@ -193,21 +193,21 @@ def create_gaussian_hm(uv, w, h):
     return np.transpose(np.array(hm_list), (1, 2, 0))
 
 def create_onehot(uv, w, h):
-    heats = list()
+    # heats = list()
     uv = uv[:, ::-1]
     temp_im = np.zeros((w,h,21))
-    temp_im2 = np.zeros((w*2,h*2,21))
-    temp_im3 = np.zeros((w*4,h*4,21))
+    # temp_im2 = np.zeros((w*2,h*2,21))
+    # temp_im3 = np.zeros((w*4,h*4,21))
         # img = list()
     for j,coord in enumerate(uv):
             # temp_im = np.zeros((224,224))
-        try: 
-            temp_im[int(coord[0]/4), int(coord[1]/4),j] = 1
-            temp_im2[int(coord[0]/2), int(coord[1]/2),j] = 1
-            temp_im3[int(coord[0]), int(coord[1]),j] = 1
-        except:
-            print("\n Coordinates where out of range : " , coord[0], coord[1])
-    return temp_im, temp_im2, temp_im3
+        # try: 
+        temp_im[int(coord[0]/8), int(coord[1]/8),j] = 1
+            # temp_im2[int(coord[0]/2), int(coord[1]/2),j] = 1
+            # temp_im3[int(coord[0]), int(coord[1]),j] = 1
+        # except:
+        #     print("\n Coordinates where out of range : " , coord[0], coord[1])
+    return temp_im #, temp_im2, temp_im3
 
 def get_depth(xyz_list):
     depth = np.zeros(21)
@@ -379,7 +379,7 @@ def save_coords(pose_cam_coord, image):
     pose_cam_coord = np.array(pose_cam_coord)
     l,n,m = pose_cam_coord.shape
     pose_cam_coord = pose_cam_coord.reshape((l*n, m))
-    if pose_cam_coord[0].shape[-1] == 3:
+    if pose_cam_coord.shape[-1] == 3:
         savetxt('pose_cam_xyz.csv',pose_cam_coord, delimiter=',')
         pickle.dump(image, open('hand_for_3d.fig.pickle', 'wb'))
     elif pose_cam_coord.shape[-1] == 2:
@@ -389,9 +389,44 @@ def save_coords(pose_cam_coord, image):
 
 
 
+def save_model(model):
+    model_json = model.to_json()
+    with open('model.json', 'w') as json_file:
+        json_file.write(model_json)
+    model.save_weights('model.h5')
+    print('Saved model to Disk! ')
+
+from tensorflow.keras.models import model_from_json
+from keypointconnector import ConnectKeypointLayer
+from layers import BatchNormalization, wBiFPNAdd
+from efficientnet import get_swish, get_dropout
+from tensorflow.keras import layers
 
 
+def load_model(dir = None,print_model = False):
+    if dir == None:
+        json_file = open('model.json', 'r')
+        h5model = 'model.h5'
+    else:
+        path = os.path.join(dir, 'model.json')
+        json_file = open(path, 'r')
+        h5model = os.path.join(dir, 'model.h5')
 
+    loaded_model_json = json_file.read()
+    json_file.close()
+    print(loaded_model_json)
+    layer_dict = {'ConnectKeypointLayer' : ConnectKeypointLayer,
+                'BatchNormalization' : BatchNormalization,
+                'wBiFPNAdd' : wBiFPNAdd,
+                'swish': get_swish(),
+                'FixedDropout' : get_dropout()}
+    loaded_model = model_from_json(loaded_model_json, layer_dict)
+    loaded_model.load_weights(h5model)
+    print('Loaded model ')
+    if print_model == True:
+        print(loaded_model.summary())
+
+    return loaded_model
 
 
 

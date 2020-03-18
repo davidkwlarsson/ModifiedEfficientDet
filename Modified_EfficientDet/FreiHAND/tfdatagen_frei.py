@@ -8,13 +8,12 @@ import matplotlib.pyplot as plt
 sys.path.insert(1, '../')
 
 from heatmapsgen import projectPoints
+from help_functions import json_load
 
 
-def create_image_dataset(dir_path, num_samples):
-    image_path = dir_path + 'training/rgb/*'
+def create_image_dataset(dir_path, num_samples, data_set):
+    image_path = os.path.join(dir_path, data_set ,'rgb/*')
     list_ds = tf.data.Dataset.list_files(image_path, shuffle=False)
-   # for f in list_ds.take(5):
-   #      print(f.numpy())
 
     list_ds = list_ds.take(num_samples)
 
@@ -28,7 +27,8 @@ def create_image_dataset(dir_path, num_samples):
     list_ds = list_ds.map(get_tfimage)
     return list_ds
 
-def get_raw_data(dir_path, data_set='training'):
+def get_raw_data(dir_path, data_set):
+    data_set = data_set.decode('utf8')
     dir_path = dir_path.decode('ascii')
     if data_set == 'training':
         xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[:-560]
@@ -113,13 +113,51 @@ def tf_render_heatmap(coord, output_shape,num_keypoints, gaussian):
     heatmap = tf.squeeze(heatmap)
     return heatmap
 
+def tf_create_OH(coord, output_shape,num_keypoints):
+    batch_size = 1
+    input_shape = output_shape
+    x = tf.reshape(coord[:, 0] / input_shape[1]*8 * output_shape[1]*8, [-1])
+    y = tf.reshape(coord[:, 1] / input_shape[0]*8 * output_shape[0]*8, [-1])
+    x_floor = tf.floor(x) - 1
+    y_floor = tf.floor(y) - 1
+    x_top = tf.floor(x) + 1
+    y_top = tf.floor(y) + 1
 
-def gen(num_samp, dir_path):
+    ones = tf.repeat(tf.eye(1), batch_size * num_keypoints)
+
+    x_floor = tf.clip_by_value(x_floor, 3, output_shape[1] - 3)  # fix out-of-bounds x
+    y_floor = tf.clip_by_value(y_floor, 3, output_shape[0] - 3)  # fix out-of-bounds y
+
+    indices_batch = tf.expand_dims(tf.cast( \
+        tf.reshape(
+            tf.transpose( \
+                tf.tile( \
+                    tf.expand_dims(tf.range(batch_size), 0) \
+                    , [num_keypoints, 1]) \
+                , [1, 0]) \
+            , [-1]), dtype=tf.float32), 1)
+    indices_batch = tf.concat([indices_batch] * 1, axis=0)
+    indices_joint = tf.cast(tf.expand_dims(tf.tile(tf.range(num_keypoints), [batch_size]), 1), dtype=tf.float32)
+    indices_joint = tf.concat([indices_joint] * 1, axis=0)
+
+    indices = tf.concat([tf.expand_dims(int((y_floor + 1)/8), 1), tf.expand_dims(int((x_floor + 1)/8), 1)], axis=1)
+    indices = tf.cast(tf.concat([tf.cast(indices_batch, dtype=tf.float32), tf.cast(indices, dtype=tf.float32),
+                                 tf.cast(indices_joint, dtype=tf.float32)], axis=1), tf.int32)
+
+
+    probs = tf.reshape(ones, (num_keypoints * batch_size * 1,))
+    heatmap = tf.scatter_nd(indices, probs, (batch_size, *output_shape, num_keypoints))
+    heatmap = tf.squeeze(heatmap)
+    return heatmap
+
+
+def gen(num_samp, dir_path, data_set):
     #while True:
-    xyz_list, K_list, indicies, num_samples = get_raw_data(dir_path, 'training')
+    xyz_list, K_list, indicies, num_samples = get_raw_data(dir_path, data_set)
     for i in range(num_samp):
         uv = projectPoints(xyz_list[i], K_list[i])
-        yield uv
+        z = np.array(xyz_list)[i][:,2]
+        yield uv, z
 
 
 def render_gaussian_heatmap(output_shape, sigma):
@@ -137,14 +175,14 @@ def render_gaussian_heatmap(output_shape, sigma):
     return heatmap
 
 
-def map_uv_to_hm(uv):
+def map_uv_to_hm(uv,z):
     """ Create a heatmap for each uv-coordinate """
     std = 2
-    gaussian = render_gaussian_heatmap((3,3), std) #TODO: This creates a gaussian
+    # gaussian = render_gaussian_heatmap((3,3), std) #TODO: This creates a gaussian
     num_kps = tf.shape(uv)[0]
-    hm = tf_render_heatmap(uv, (224,224), num_kps, gaussian)
+    hm = tf_create_OH(uv, (28,28), num_kps)
 
-    return hm
+    return hm,z
 
 
 def benchmark(dataset, num_epochs=2):
@@ -159,16 +197,17 @@ def benchmark(dataset, num_epochs=2):
     return r
 
 
-def tf_generator(dir_path, batch_size=8, num_samp = 100):
+def tf_generator(dir_path, batch_size=8, num_samp = 100, data_set = 'training'):
     """ Create generator, right now seperate one for
         heatmaps and one to read images"""
+    print(data_set)
     dataset_uv = tf.data.Dataset.from_generator(
         gen,
-        output_types=tf.int64,
-        output_shapes=tf.TensorShape([21, 2]),
-        args=[num_samp, dir_path])
+        output_types=(tf.int64, tf.float32),
+        output_shapes=(tf.TensorShape([21, 2]), tf.TensorShape(21)),
+        args=[num_samp, dir_path, data_set])
     dataset_hm = dataset_uv.map(map_uv_to_hm, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    dataset_im = create_image_dataset(dir_path, num_samp)
+    dataset_im = create_image_dataset(dir_path, num_samp, data_set)
     dataset = tf.data.Dataset.zip((dataset_im, dataset_hm))
     batched_dataset = dataset.repeat().batch(batch_size)
     return batched_dataset

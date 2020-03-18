@@ -42,9 +42,10 @@ from network import efficientdet # , efficientdet_coord
 from efficientnet import BASE_WEIGHTS_PATH, WEIGHTS_HASHES
 from FreiHAND.freihand_utils import *
 from losses import *
+from FreiHAND.tfdatagen_frei import tf_generator, benchmark
 
 
-# tf.compat.v1.disable_eager_execution()
+tf.compat.v1.disable_eager_execution()
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' 
@@ -97,9 +98,6 @@ def scheduler(epoch):
         else:
             return 0.001 * tf.math.exp(0.1*(-epoch))
 
-def tf_generator(x,y):
-    for x_b, y_b in zip(x,y):
-        yield (x_b,y_b)
 
 default_timeit_steps = 1000
 BATCH_SIZE = 16
@@ -199,8 +197,14 @@ def main():
     tf.compat.v1.keras.backend.set_session(get_session())
 
     # images, heatmaps, heatmaps2,heatmaps3, coord = get_trainData(dir_path, 100, multi_dim=True)
-    
-    train_data = get_tfdata(dir_path)
+    batch_size = 16
+    nbr_epochs = 1
+    num_samp = 128000
+    num_val_samp = 100
+    train_dataset = tf_generator(dir_path, batch_size=batch_size, num_samp=num_samp, data_set = 'training')
+    valid_dataset = tf_generator(dir_path, batch_size=batch_size, num_samp=num_val_samp, data_set = 'validation')
+    traingen = train_dataset.prefetch(batch_size)
+    validgen = valid_dataset.prefetch(batch_size)
 
     # check if it looks good
     # plot_heatmaps_with_coords(images, heatmaps, coord)
@@ -259,7 +263,8 @@ def main():
 
     callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
 
-    history = model.fit(train_data, epochs = 15, verbose = 1, callbacks = [callback])
+    history = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
+                    ,steps_per_epoch = num_samp//batch_size, epochs = nbr_epochs, verbose=1, callbacks=[callback])
     # model.save_weights('handposenet')
 
     # layer = model.get_layer('connect_keypoint_layer')
