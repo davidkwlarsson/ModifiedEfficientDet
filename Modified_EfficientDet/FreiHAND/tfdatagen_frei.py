@@ -123,10 +123,10 @@ def tf_create_OH(coord, output_shape,num_keypoints):
     x_top = tf.floor(x) + 1
     y_top = tf.floor(y) + 1
 
-    ones = tf.repeat(tf.eye(1), batch_size * num_keypoints)
+    ones = tf.keras.backend.repeat(tf.eye(1), batch_size * num_keypoints)
 
-    x_floor = tf.clip_by_value(x_floor, 3, output_shape[1] - 3)  # fix out-of-bounds x
-    y_floor = tf.clip_by_value(y_floor, 3, output_shape[0] - 3)  # fix out-of-bounds y
+    x_floor = tf.clip_by_value(x_floor, 3, output_shape[1]*8 - 3)  # fix out-of-bounds x
+    y_floor = tf.clip_by_value(y_floor, 3, output_shape[0]*8 - 3)  # fix out-of-bounds y
 
     indices_batch = tf.expand_dims(tf.cast( \
         tf.reshape(
@@ -156,7 +156,8 @@ def gen(num_samp, dir_path, data_set):
     xyz_list, K_list, indicies, num_samples = get_raw_data(dir_path, data_set)
     for i in range(num_samp):
         uv = projectPoints(xyz_list[i], K_list[i])
-        z = np.array(xyz_list)[i][:,2]
+        z = np.array(xyz_list[i])[:,2]
+        #print(z.shape)
         yield uv, z
 
 
@@ -200,7 +201,6 @@ def benchmark(dataset, num_epochs=2):
 def tf_generator(dir_path, batch_size=8, num_samp = 100, data_set = 'training'):
     """ Create generator, right now seperate one for
         heatmaps and one to read images"""
-    print(data_set)
     dataset_uv = tf.data.Dataset.from_generator(
         gen,
         output_types=(tf.int64, tf.float32),
