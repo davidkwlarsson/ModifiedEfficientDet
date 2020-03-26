@@ -21,6 +21,7 @@ def scheduler(epoch):
   if epoch < 10:
     return 0.001
   else:
+    print(0.001 * tf.math.exp(0.1 * (1 - epoch)))
     return 0.001 * tf.math.exp(0.1 * (10 - epoch))
 
 
@@ -28,14 +29,14 @@ def lift_model(nbr_outputs):
     #https://arxiv.org/pdf/1910.12029v2.pdf
     input_shape = (42)
     uv_input = layers.Input(input_shape)
-    r0 = layers.Dense(4096, activation = 'linear')(uv_input)
+    r0 = layers.Dense(300, activation = 'linear')(uv_input)
     r1 = r0
     for i in range(2):
         ## Residual block ##
         r1 = layers.BatchNormalization()(r1)
         r1 = layers.Dropout(0.5)(r1)
         r1 = activations.relu(r1)
-        r1 = layers.Dense(4096, activation='linear')(r1)
+        r1 = layers.Dense(300, activation='linear')(r1)
 
     added = layers.Add()([r0, r1])
 
@@ -176,8 +177,8 @@ def extract_z(xyz_list):
 def extract_focal(K_list):
     f = []
     for i in range(len(K_list)):
-        fx = np.array(K_list[i])[0][0]/224
-        fy = np.array(K_list[i])[1][1]/224
+        fx = np.array(K_list[i])[0][0]#/224
+        fy = np.array(K_list[i])[1][1]#/224
      #   print(K_list[i])
      #   print(fx)
       #  print(fy)
@@ -187,19 +188,29 @@ def extract_focal(K_list):
 
 def get_canonical(z_root, f):
     z_canonical = []
-    for i in range(len(z_root)):
-        z_canonical.append(z_root[i]/f[i])
+    print(np.shape(z_root[0]))
+    print(np.shape(z_root))
+    if np.shape(z_root[0]) == ():
+        for i in range(len(z_root)):
+            z_canonical.append(z_root[i]/f[i])
+    else:
+        for i in range(len(z_root)):
+            z_canonical.append([])
+            for j in range(21):
+                z_canonical[i].append(np.array(z_root[i])[j] / f[i])
     return z_canonical
 
 
-def concat_uv_z(uv_n_list, z_rel, z_root_c):
+def concat_xy_z(xyz_list, z_rel, z_root_c):
     vec = []
-    for i in range(len(uv_n_list)):
+    for i in range(len(xyz_list)):
         vec.append([])
         vec[i].append(z_root_c[i])
+        vec[i].append(xyz_list[i][0][0])
+        vec[i].append(xyz_list[i][0][1])
         for j in range(1,21):
-            vec[i].append(uv_n_list[i][j][0])
-            vec[i].append(uv_n_list[i][j][1])
+            vec[i].append(xyz_list[i][j][0])
+            vec[i].append(xyz_list[i][j][1])
             vec[i].append(z_rel[i][j])
     return vec
 
@@ -209,20 +220,17 @@ def calc_canonical(uv_n_list_val, preds, c, f):
     for n in range(len(preds)):
         xyz = []
         i = 0
-        z_r = preds[i][0]
-        rx = uv_n_list_val[i][0][0]
-        ry = uv_n_list_val[i][0][1]
-        Rx = (rx - c) * z_r
-        Ry = (ry - c) * z_r
-        Rz = z_r * f[i]
+        z_r = preds[n][0]
+        Rx = preds[n][1]
+        Ry = preds[n][2]
+        Rz = z_r * f[n]
         xyz.append([Rx, Ry, Rz])
         Abs_z_root = Rz
-        for i in range(1,len(preds[0]),3):
+        for i in range(3, len(preds[0]), 3):
           #  print(i)
             Rx = preds[n][i]
             Ry = preds[n][i+1]
-            Rz = preds[n][i+2]+Abs_z_root
-
+            Rz = preds[n][i+2] + Abs_z_root
             xyz.append([Rx, Ry, Rz])
         xyz_all.append(xyz)
     return xyz_all
@@ -235,9 +243,7 @@ def main():
         dir_path = "/Users/Sofie/exjobb/freihand/FreiHAND_pub_v2/"  #
     print('in correct file')
    # matplotlib.use('TkAgg')
-   # data_set = 'small_dataset'
-
-
+    #data_set = 'small_dataset'
     data_set = 'training'
     width = 224
     height = 224
@@ -245,7 +251,7 @@ def main():
     xyz_list, K_list, num_samples = get_raw_data(dir_path, data_set)
     xyz_list_val, K_list_val, num_samples_val = get_raw_data(dir_path, 'validation')
     batch_size = 16
-    nbr_epochs = 60
+    nbr_epochs = 5
     # This data should come from network later..
     uv_list = get_uv_data(xyz_list, K_list, num_samples)
     uv_list_val = get_uv_data(xyz_list_val, K_list_val, num_samples_val)
@@ -265,11 +271,10 @@ def main():
     z_rel = relative_depth(z)
     z_rel_val = relative_depth(z_val)
 
-
     # Creating 3J-2 outputs
 
-    target = np.array(concat_uv_z(uv_n_list, z_rel, z_root_c))
-    target_val = np.array(concat_uv_z(uv_n_list_val, z_rel_val, z_val_root_c))
+    target = np.array(concat_xy_z(xyz_list, z_rel, z_root_c))
+    target_val = np.array(concat_xy_z(xyz_list_val, z_rel_val, z_val_root_c))
     #print(target)
     #target = np.array(z_rel)
     #target_val = np.array(z_rel_val)
@@ -279,7 +284,7 @@ def main():
     print('target_val', np.shape(target_val))
     print('data', np.shape(data))
     print('data_val', np.shape(data_val))
-    model = lift_model(61)
+    model = lift_model(63)
     model.compile(optimizer=Adam(lr=1e-3), loss=lift_loss)#loss='mse')
     model.summary()
     callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
@@ -287,23 +292,94 @@ def main():
     history = model.fit(x=data, y=target, validation_data=(data_val, target_val),
                         validation_steps=num_samples_val // batch_size,
                         steps_per_epoch=num_samples // batch_size,
-                        epochs=nbr_epochs, verbose=1, callbacks=[callback])
+                        epochs=nbr_epochs, verbose=1)#, callbacks=[callback])
     plot_acc_loss(history)
     preds = model.predict(data_val)
     print(np.shape(preds))
-    im_center = 0
+    im_center = 112
     xyz_preds = calc_canonical(uv_n_list_val, preds, im_center, f_val)
-    print('Preds reshaped',np.shape(xyz_preds))
+    print('Preds reshaped', np.shape(xyz_preds))
     xyz_tar = xyz_list_val
 
 
     images = get_evalImages(dir_path, 10, dataset='validation')
-
+    roots = []
     for i in range(10):
         save_coords(xyz_preds[i], images[i], 'pred_' + str(i))
         save_coords(xyz_tar[i], images[i], 'target_' + str(i))
+        roots.append(np.array(xyz_preds[i])[0][2])
+
+    save_z_root_coords(roots, z_val_root[0:10], '000')
+
+def main_test():
+    try:
+        dir_path = sys.argv[1]
+    except:
+        dir_path = "/Users/Sofie/exjobb/freihand/FreiHAND_pub_v2/"  #
+    data_set = 'small_dataset'
+    width = 224
+    height = 224
+    input_shape = (width, height)
+    xyz_list, K_list, num_samples = get_raw_data(dir_path, data_set)
+    xyz_list_val, K_list_val, num_samples_val = get_raw_data(dir_path, 'validation')
+    batch_size = 16
+    nbr_epochs = 30
+    # This data should come from network later..
+    uv_list = get_uv_data(xyz_list, K_list, num_samples)
+    uv_list_val = get_uv_data(xyz_list_val, K_list_val, num_samples_val)
+    # Normalize so center in (0,0) and corners in (+-1,+-1)
+    uv_n_list = normalize(uv_list, input_shape)
+    uv_n_list_val = normalize(uv_list_val, input_shape)
+    # Extract focal length from K matrix
+    f = extract_focal(K_list)
+    f_val = extract_focal(K_list_val)
+    # Extract z coordinate and root
+    z, z_root = extract_z(xyz_list)
+    z_val, z_val_root = extract_z(xyz_list_val)
+    # Divide root with focal length so indep. of camera
+    z_root_c = get_canonical(z_root, f)
+    z_val_root_c = get_canonical(z_val_root, f_val)
+    # Calculate relative pose coordinates
+    z_rel = relative_depth(z)
+    z_rel_val = relative_depth(z_val)
+    z_rel_c = get_canonical(z_rel, f_val)
+    z_rel_val_c = get_canonical(z_rel_val, f_val)
+
+    # Creating 3J-2 outputs
+
+    target = np.array(concat_xy_z(xyz_list, z_rel, z_root_c))
+    target_val = np.array(concat_xy_z(xyz_list_val, z_rel_val, z_val_root_c))
+    print(z_val_root_c[0])
+    print(target_val[0][0])
+
+    #target = np.array(z_rel)
+    #target_val = np.array(z_rel_val)
+    data = reshape_data(uv_n_list)
+    data_val = reshape_data(uv_n_list_val)
+    xyz_tar = xyz_list_val
+    xyz_preds = calc_canonical(uv_list_val, target_val, 112, f_val)
+    images = get_evalImages(dir_path, 10, dataset='validation')
+
+
+    print(xyz_tar[0][0])
+    print(xyz_preds[0][0])
+    print(xyz_tar[0][1])
+    print(xyz_preds[0][1])
+    roots = []
+    for i in range(10):
+        save_coords(xyz_preds[i], images[i], 'pred_' + str(i))
+        save_coords(xyz_tar[i], images[i], 'target_' + str(i))
+        roots.append(np.array(xyz_preds[i])[0][2])
+       # print(np.array(xyz_tar[i])[0][2])
+       # print(np.array(xyz_preds[i])[0][2])
+    save_z_root_coords(roots, z_val_root[0:10], str(000))
+
+
 
 if __name__ == '__main__':
     tf.keras.backend.clear_session()
    # use_multiprocessing = True
     main()
+    #main_test()
+
+    # Kan det vara fel med fokallängd i de relativa djupen???
