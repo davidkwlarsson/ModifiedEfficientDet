@@ -91,6 +91,11 @@ def get_flops(model):
             return flops.total_float_ops
 
 
+def scheduler(epoch):
+        if epoch < 1:
+            return 0.001
+        else:
+            return 0.001 * tf.math.exp(0.1*(-epoch))
 
 def main():
     dir_path = sys.argv[1]
@@ -103,8 +108,8 @@ def main():
 
     # images, heatmaps, heatmaps2,heatmaps3, coord = get_trainData(dir_path, 100, multi_dim=True)
 
-    traingen = dataGenerator(dir_path, batch_size = 8, data_set = 'training')
-    validgen = dataGenerator(dir_path, batch_size= 8, data_set = 'validation')
+    traingen = dataGenerator(dir_path, batch_size = 16, data_set = 'training')
+    validgen = dataGenerator(dir_path, batch_size= 16, data_set = 'validation')
 
     # check if it looks good
     # plot_heatmaps_with_coords(images, heatmaps, coord)
@@ -123,11 +128,11 @@ def main():
 
     # compile model
     print("Compiling model ... \n")
-    losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce}
-    # losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce, 'depth' : 'mean_squared_error'}
-    # losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce, 'depthmaps' : 'mean_squared_error'}
-    lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0}
-    # lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0, 'depth' : 1.0}
+    # losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce}
+    losses = {"normalsize" : weighted_bce, 'depth' : 'mean_squared_error'}
+    # # losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce, 'depthmaps' : 'mean_squared_error'}
+    # lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0}
+    lossWeights = {"normalsize" : 1.0, 'depth' : 1.0}
     # lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0, 'depthmaps' : 1.0}
     # focalloss = SigmoidFocalCrossEntropy(reduction=Reduction.SUM_OVER_BATCH_SIZE)
     model.compile(optimizer = Adam(lr=1e-3),
@@ -144,7 +149,7 @@ def main():
     # print(get_flops(model))
 
     # model.fit(images, {"normalsize" : heatmaps, "size2": heatmaps2, 'size3': heatmaps3},
-                                # batch_size=16, epochs=100, verbose=1)
+    #                             batch_size=16, epochs=100, verbose=1)
     # K.set_value(model.optimizer.learning_rate, 1e-5)
     # model.fit(images, heatmaps, batch_size = 16, epochs = 100, verbose = 1)
 
@@ -160,21 +165,39 @@ def main():
     #     verbose=1)
     #     ]
 
-    model.fit(traingen,  validation_data = validgen, validation_steps = 18
-                    ,steps_per_epoch = 1, epochs = 1, verbose = 1)
 
+    callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
+
+    history = model.fit(traingen,  validation_data = validgen, validation_steps = 18
+                    ,steps_per_epoch = 8000, epochs = 15, verbose = 1, callbacks = [callback])
     # model.save_weights('handposenet')
+
+    # layer = model.get_layer('connect_keypoint_layer')
+    # weights = layer.get_weights()
+    # for weight, values in zip(layer.weights,weights):
+    #     if weight.name == 'connect_keypoint_layer/lambda:0':
+    #         print(weight, "with the value = ", values)
+    # print(layer[-1]) 
 
     # images = get_evalImages(dir_path, 10)
     validgen2 = dataGenerator(dir_path, batch_size= 10, data_set = 'validation')
     (images, targets) = next(validgen2)
 
-    (preds, preds2 ,preds3) = model.predict(images)
-    # (preds, preds2 ,preds3, depth) = model.predict(images)
+    # (preds, preds2 ,preds3, depth_pred) = model.predict(images)
+    preds, depth_pred = model.predict(images)
+    # (preds) = model.predict(images)
     
-    (heatmaps, heatmaps2, heatmaps3) = targets
+    # (heatmaps, heatmaps2, heatmaps3, depth) = targets
+    heatmaps, depth = targets
 
-    # plot_acc_loss(history)
+    # preds = np.squeeze(preds)
+    # heatmaps = np.squeeze(heatmaps)
+    # (preds, preds2 ,preds3) = targets
+    
+    try:
+        plot_acc_loss(history)
+    except:
+        print('could not plot loss')
 
     
     # get coordinates from predictions
@@ -182,15 +205,19 @@ def main():
     coord = heatmaps_to_coord(heatmaps)
     # coord_upsamp = heatmaps_to_coord(preds2)
 
-    plot_predicted_heatmaps(preds, heatmaps)
+    plot_predicted_heatmaps(preds, heatmaps, images)
     # plot_predicted_heatmaps(preds2, heatmaps2)
-    plot_predicted_hands_uv(images, coord_preds*4)
+    plot_predicted_hands_uv(images, coord_preds*8)
 
-    # xyz_pred = add_depth_to_coords(coord_preds[0], depth[0])
+
+    K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-560:]
+    K_list = K_list[:len(preds)]
+    xyz_pred = add_depth_to_coords(coord_preds*8, depth_pred, K_list)
+    save_coords(xyz_pred, images[0])
     # draw_3d_skeleton(xyz_pred, (224*2,224*2))
-    plot_predicted_coordinates(images, coord_preds*4, coord*4)
+    plot_predicted_coordinates(images, coord_preds*8, coord*8)
     # plot_predicted_coordinates(images, coord_upsamp*2, coord)
-
+    save_model(model)
 
 
 
