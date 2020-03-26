@@ -58,5 +58,6 @@ def draw_3d_skeleton(pose_cam_xyz,image, image_size):
 
 
 data = loadtxt('pose_cam_xyz.csv', delimiter=',')
+print(data[:21,:].shape)
 image = pickle.load(open('hand_for_3d.fig.pickle', 'rb'))
-draw_3d_skeleton(data, image,image_size= (224*2,224*2))
+draw_3d_skeleton(data[:21,:], image,image_size= (224*2,224*2))

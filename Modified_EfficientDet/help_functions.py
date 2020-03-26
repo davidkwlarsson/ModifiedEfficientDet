@@ -15,6 +15,56 @@ import skimage.io as io
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 
+import tensorflow as tf
+
+
+
+def render_onehot_heatmap(coord, output_shape, num_keypoints):
+    batch_size = tf.shape(coord)[0]
+    input_shape = output_shape
+
+    x = tf.reshape(coord[:, :, 0] / input_shape[1] * output_shape[1], [-1])
+    y = tf.reshape(coord[:, :, 1] / input_shape[0] * output_shape[0], [-1])
+    x_floor = tf.floor(x)
+    y_floor = tf.floor(y)
+
+    x_floor = tf.clip_by_value(x_floor, 0, output_shape[1] - 1)  # fix out-of-bounds x
+    y_floor = tf.clip_by_value(y_floor, 0, output_shape[0] - 1)  # fix out-of-bounds y
+
+    indices_batch = tf.expand_dims(tf.to_float( \
+        tf.reshape(
+            tf.transpose( \
+                tf.tile( \
+                    tf.expand_dims(tf.range(batch_size), 0) \
+                    , [num_keypoints, 1]) \
+                , [1, 0]) \
+            , [-1])), 1)
+    indices_batch = tf.concat([indices_batch] * 4, axis=0)
+    indices_joint = tf.to_float(tf.expand_dims(tf.tile(tf.range(num_keypoints), [batch_size]), 1))
+    indices_joint = tf.concat([indices_joint] * 4, axis=0)
+
+    indices_lt = tf.concat([tf.expand_dims(y_floor, 1), tf.expand_dims(x_floor, 1)], axis=1)
+    indices_lb = tf.concat([tf.expand_dims(y_floor + 1, 1), tf.expand_dims(x_floor, 1)], axis=1)
+    indices_rt = tf.concat([tf.expand_dims(y_floor, 1), tf.expand_dims(x_floor + 1, 1)], axis=1)
+    indices_rb = tf.concat([tf.expand_dims(y_floor + 1, 1), tf.expand_dims(x_floor + 1, 1)], axis=1)
+    indices = tf.concat([indices_lt, indices_lb, indices_rt, indices_rb], axis=0)
+    indices = tf.cast(tf.concat([tf.to_float(indices_batch), tf.to_float(indices), tf.to_float(indices_joint)], axis=1),
+                      tf.int32)
+
+    prob_lt = (1 - (x - x_floor)) * (1 - (y - y_floor))
+    prob_lb = (1 - (x - x_floor)) * (y - y_floor)
+    prob_rt = (x - x_floor) * (1 - (y - y_floor))
+    prob_rb = (x - x_floor) * (y - y_floor)
+    probs = tf.concat([prob_lt, prob_lb, prob_rt, prob_rb], axis=0)
+    #  probs = tf.concat([prob_lt,prob_lt,prob_lt,prob_lt], axis=0)
+
+    heatmap = tf.scatter_nd(indices, probs, (batch_size, *output_shape, num_keypoints))
+    normalizer = tf.reshape(tf.reduce_sum(heatmap, axis=[1, 2]), [batch_size, 1, 1, num_keypoints])
+    normalizer = tf.where(tf.equal(normalizer, 0), tf.ones_like(normalizer), normalizer)
+    heatmap = heatmap / normalizer
+
+    return heatmap
+
 
 def _assert_exist(p):
     msg = 'File does not exists: %s' % p
@@ -55,21 +105,23 @@ def plot_heatmaps_with_coords(images, heatmaps, coords):
 
 def plot_acc_loss(history):
     # Plot acc and loss vs epochs
-    acc = history.history['acc']
-    val_acc = history.history['val_acc']
+    # Plot acc and loss vs epochs
+    #acc = history.history['acc']
+    #val_acc = history.history['val_acc']
     loss = history.history['loss']
     val_loss = history.history['val_loss']
-    epochs = range(1, len(acc) + 1)
-    plt.plot(epochs, acc, 'bo', label='Training acc')
-    plt.plot(epochs, val_acc, 'b', label='Validation acc')
-    plt.title('Training and validation accuracy')
-    plt.legend()
-    plt.figure()
+    epochs = range(1, len(loss) + 1)
+   # plt.plot(epochs, acc, 'bo', label='Training acc')
+   # plt.plot(epochs, val_acc, 'b', label='Validation acc')
+    #plt.title('Training and validation accuracy')
+    #plt.legend()
+    #plt.figure()
     plt.plot(epochs, loss, 'bo', label='Training loss')
     plt.plot(epochs, val_loss, 'b', label='Validation loss')
     plt.title('Training and validation loss')
     plt.legend()
     plt.show()
+    plt.savefig('acc_loss.png')
 
 
 def read_img(idx, base_path, set_name, version=None):
@@ -90,8 +142,8 @@ def heatmaps_to_coord(heatmaps):
     for j in range(len(heatmaps)):
         for i in range(21):
             ind = np.unravel_index(np.argmax(heatmaps[j][:, :, i], axis=None), heatmaps[j][:, :, i].shape)
-            coords[j].append(ind[0])
             coords[j].append(ind[1])
+            coords[j].append(ind[0])
 
     return np.array(coords)
 
@@ -141,81 +193,28 @@ def create_gaussian_hm(uv, w, h):
     return np.transpose(np.array(hm_list), (1, 2, 0))
 
 def create_onehot(uv, w, h):
-    heats = list()
+    # heats = list()
+    uv = uv[:, ::-1]
     temp_im = np.zeros((w,h,21))
-    temp_im2 = np.zeros((w*2,h*2,21))
-    temp_im3 = np.zeros((w*4,h*4,21))
+    # temp_im2 = np.zeros((w*2,h*2,21))
+    # temp_im3 = np.zeros((w*4,h*4,21))
         # img = list()
     for j,coord in enumerate(uv):
             # temp_im = np.zeros((224,224))
-        try: 
-            temp_im[int(coord[0]/4), int(coord[1]/4),j] = 1
-            temp_im2[int(coord[0]/2), int(coord[1]/2),j] = 1
-            temp_im3[int(coord[0]), int(coord[1]),j] = 1
-        except:
-            print("\n Coordinates where out of range : " , coord[0], coord[1])
-    return temp_im, temp_im2, temp_im3
+        # try: 
+        temp_im[int(coord[0]/8), int(coord[1]/8),j] = 1
+            # temp_im2[int(coord[0]/2), int(coord[1]/2),j] = 1
+            # temp_im3[int(coord[0]), int(coord[1]),j] = 1
+        # except:
+        #     print("\n Coordinates where out of range : " , coord[0], coord[1])
+    return temp_im #, temp_im2, temp_im3
 
 def get_depth(xyz_list):
     depth = np.zeros(21)
     xyz = np.array(xyz_list)
     for j in range(21):
-        depth[j] = xyz[j, 2]
+        depth[j] = xyz[j, 2]- xyz[0,2]
     return depth
-
-
-
-# def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
-#     if data_set == 'training':
-#         xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[:-560]
-#         xyz_list *= 4
-#         num_samples = len(xyz_list)
-#         K_list = json_load(os.path.join(dir_path, 'training_K.json'))[:-560]
-#         K_list *= 4
-#         indicies = [i for i in range(32000)] + [i for i in range(32560,64560)] + [i for i in range(65120,97120)] + [i for i in range(97680,129680)]
-#         print("Total number of training samples: ", num_samples, " and ", len(indicies))
-#     elif data_set == 'validation':
-#         xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-560:]
-#         xyz_list *= 4
-#         num_samples = len(xyz_list)
-#         K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-560:]
-#         K_list *= 4
-#         indicies = [i for i in range(32000,32560)] + [i for i in range(64560,65120)] + [i for i in range(97120, 97680)] + [i for i in range(129680,130240)]
-#         print("Total number of validation samples: ", num_samples," and ", len(indicies))
-#     elif data_set == 'evaluation':
-#         xyz_list = json_load(os.path.join(dir_path, 'evaluation_xyz.json')  )
-#         num_samples = len(xyz_list)
-#         print("Total number of evaluation samples: ", num_samples)
-#         K_list = json_load(os.path.join(dir_path, 'evaluation_K.json'))
-
-#     else:
-#         print("No specified data found!")
-#         sys.exit()
-        
-
-#     i = 0
-#     while True:
-#         batch_x = []
-#         batch_y = [[], [], []]
-#         for j in range(batch_size):
-#             idx = indicies[i+j]
-#             img = read_img(idx, dir_path, 'training')/255
-#             uv = projectPoints(xyz_list[i+j], K_list[i+j])
-#             # depthmaps = get_depthmaps(uv, xyz_list[idx])
-#             depth = get_depth(xyz_list[i+j])
-#             onehots = create_onehot(uv, 56,56)
-#             batch_x.append(img)
-#             batch_y[0].append(onehots[0])
-#             batch_y[1].append(onehots[1])
-#             batch_y[2].append(onehots[2])
-#             # batch_y[3].append(depthmaps)
-#             # batch_y[3].append(depth)
-#             if i+j == num_samples-1:
-#                 i = -j
-#         i += batch_size
-
-#         yield (np.array(batch_x), batch_y)
-
 
 
 
@@ -230,25 +229,30 @@ def save_preds(dir_path, predictions):
         io.imsave(name, pred.astype(np.uint8))
 
 
-def plot_predicted_heatmaps(preds, heatmaps):
+def plot_predicted_heatmaps(preds, heatmaps, images):
     fig = plt.figure(figsize=(8, 8))
     columns = 2
     rows = 5
     n = 0
     for i in range(1,rows+1,2):
         fig.add_subplot(rows, columns, i)
-        plt.imshow(preds[0][:, :, n])
+        # plt.imshow(preds[0][:, :, n])
+        pred = np.sum(preds[0], axis = -1)
+        plt.imshow(pred)
         plt.colorbar()
         fig.add_subplot(rows, columns, i+1)
-        plt.imshow(heatmaps[0][:, :, n])
+        # plt.imshow(heatmaps[0][:,:,n])
+        plt.imshow(images[0])
         plt.colorbar()
         n += 1
-    plt.show()
+        break
     plt.savefig('heatmaps.png')
+    plt.show()
 
 
 
 def plot_predicted_coordinates(images, coord_preds, coord):
+    
     try:
         fig = plt.figure(figsize=(8, 8))
         columns = 5
@@ -259,8 +263,11 @@ def plot_predicted_coordinates(images, coord_preds, coord):
             # need to project onto image..
             plt.scatter(coord[i - 1][0::2], coord[i - 1][1::2], marker='o', s=2)
             plt.scatter(coord_preds[i - 1][0::2], coord_preds[i - 1][1::2], marker='x', s=2)
-        plt.show()
+            # plt.scatter(coord[i - 1], marker='o', s=2)
+            # plt.scatter(coord_preds[i - 1], marker='x', s=2)
+            
         plt.savefig('scatter.png')
+        plt.show()
     except:
         print('Error in scatter plot')
 
@@ -291,22 +298,26 @@ def plot_predicted_hands_uv(images, coord_preds):
         plt.imshow(images[i - 1])
         # need to project onto image..
         one_pred = [coord_preds[i-1][0::2], coord_preds[i-1][1::2]]
-        plot_hand(ax, np.transpose(np.array(one_pred)),order = 'uv')
+        # one_pred = np.transpose(coord_preds[i-1])
+        plot_hand(ax, np.transpose(np.array(one_pred)), order = 'uv')
         
-    plt.show()
     plt.savefig('hands_uv.png')
+    plt.show()
 
 
-def add_depth_to_coords(coords, depth, K):
-
+def add_depth_to_coords(coords, depth, K_list):
+    xyz = []
     ## Transform the x,y coordinates back to 3D using the intrinsic camera parameters, K
-    K = np.array(K)
-    x_coords = coords[0::2]*depth
-    y_coords = coords[1::2]*depth
-    uv_z = np.array([x_coords, y_coords, depth])
-    xyz = np.linalg.solve(K,uv_z)
+    
+    for i in range(len(coords)):
+        K = np.array(K_list[i])
+        x_coords = coords[i][0::2]*depth[i]
+        y_coords = coords[i][1::2]*depth[i]
+        uv_z = np.array([x_coords, y_coords, depth[i]])
+        # print(uv_z.shape, K.shape)
+        xyz.append(np.array(np.linalg.solve(K,uv_z)).T)
 
-    return np.array(xyz).T
+    return xyz
 
 
 
@@ -367,16 +378,58 @@ def draw_3d_skeleton(pose_cam_xyz, image_size):
 
 
 
-def save_xyz(pose_cam_xyz, image):
-    savetxt('pose_cam_xyz.csv',pose_cam_xyz, delimiter=',')
-    pickle.dump(image, open('hand_for_3d.fig.pickle', 'wb'))
+def save_coords(pose_cam_coord, image):
+    pose_cam_coord = np.array(pose_cam_coord)
+    l,n,m = pose_cam_coord.shape
+    pose_cam_coord = pose_cam_coord.reshape((l*n, m))
+    if pose_cam_coord.shape[-1] == 3:
+        savetxt('pose_cam_xyz.csv',pose_cam_coord, delimiter=',')
+        pickle.dump(image, open('hand_for_3d.fig.pickle', 'wb'))
+    elif pose_cam_coord.shape[-1] == 2:
+        savetxt('pose_cam_xy.csv',pose_cam_coord, delimiter=',')
+        pickle.dump(image, open('hand_for_2d.fig.pickle', 'wb'))
 
 
 
 
+def save_model(model):
+    model_json = model.to_json()
+    with open('model.json', 'w') as json_file:
+        json_file.write(model_json)
+    model.save_weights('model.h5')
+    print('Saved model to Disk! ')
+
+from tensorflow.keras.models import model_from_json
+from keypointconnector import ConnectKeypointLayer
+from layers import BatchNormalization, wBiFPNAdd
+from efficientnet import get_swish, get_dropout
+from tensorflow.keras import layers
 
 
+def load_model(dir = None,print_model = False):
+    if dir == None:
+        json_file = open('model.json', 'r')
+        h5model = 'model.h5'
+    else:
+        path = os.path.join(dir, 'model.json')
+        json_file = open(path, 'r')
+        h5model = os.path.join(dir, 'model.h5')
 
+    loaded_model_json = json_file.read()
+    json_file.close()
+    print(loaded_model_json)
+    layer_dict = {'ConnectKeypointLayer' : ConnectKeypointLayer,
+                'BatchNormalization' : BatchNormalization,
+                'wBiFPNAdd' : wBiFPNAdd,
+                'swish': get_swish(),
+                'FixedDropout' : get_dropout()}
+    loaded_model = model_from_json(loaded_model_json, layer_dict)
+    loaded_model.load_weights(h5model)
+    print('Loaded model ')
+    if print_model == True:
+        print(loaded_model.summary())
+
+    return loaded_model
 
 
 

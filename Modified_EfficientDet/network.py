@@ -6,6 +6,7 @@ from functools import reduce
 # from keras_ import EfficientNetB0, EfficientNetB1, EfficientNetB2
 # from keras_ import EfficientNetB3, EfficientNetB4, EfficientNetB5, EfficientNetB6
 
+import tensorflow as tf
 from tensorflow.keras import layers
 from tensorflow.keras import initializers
 from tensorflow.keras import models
@@ -15,6 +16,7 @@ from tfkeras import EfficientNetB3, EfficientNetB4, EfficientNetB5, EfficientNet
 from layers import ClipBoxes, RegressBoxes, FilterDetections, wBiFPNAdd, BatchNormalization
 from initializers import PriorProbability
 from keypointconnector import *
+from help_functions import plot_predicted_heatmaps
 
 w_bifpns = [64, 88, 112, 160, 224, 288, 384]
 image_sizes = [512, 640, 768, 896, 1024, 1280, 1408]
@@ -176,6 +178,27 @@ def build_regress_head(width, depth, num_anchors=9):
     return models.Model(inputs=inputs, outputs=outputs, name='box_head')
 
 
+def liftpose(uv_coords):
+    # Save the output layer and then pop it to remove
+    uv_coords = layers.Flatten()(uv_coords)
+    print(uv_coords)
+    r0 = layers.Dense(500, activation = 'linear')(uv_coords)
+    print('r0 : ', r0)
+    r1 = r0
+    for i in range(2):
+        ## Residual block ##
+        r1 = layers.BatchNormalization()(r1)
+        r1 = layers.Dropout(0.5)(r1)
+        r1 = tf.keras.activations.relu(r1)
+        r1 = layers.Dense(500, activation='linear')(r1)
+
+    added = layers.Add()([r0, r1])
+    print('added : ', added)
+    
+    rel_depth = layers.Dense(21, activation='linear', name = 'depth')(added)
+
+    return rel_depth
+
 
 def efficientdet(phi,input_shape = (224,224,3), num_classes=20, weighted_bifpn=False, freeze_bn=False, score_threshold=0.01):
     assert phi in range(7)
@@ -183,6 +206,7 @@ def efficientdet(phi,input_shape = (224,224,3), num_classes=20, weighted_bifpn=F
     # input_shape = (input_size, input_size, 3)
     # input_shape = (224, 224, 3)
     input_shape = input_shape
+    num_rows, num_cols = (224,224)
     image_input = layers.Input(input_shape)
     w_bifpn = w_bifpns[phi]
     d_bifpn = 2 + phi
@@ -192,8 +216,9 @@ def efficientdet(phi,input_shape = (224,224,3), num_classes=20, weighted_bifpn=F
     weights = phi
     # features = backbone_cls(include_top=False, input_shape=input_shape, weights=weights)(image_input)
     features = backbone_cls(input_tensor=image_input, freeze_bn=freeze_bn)
-    # for feat in features:
-    #     print(feat.shape)
+    print(features)
+    for feat in features:
+        print(feat.shape)
 
     if weighted_bifpn:
         for i in range(d_bifpn):
@@ -203,7 +228,7 @@ def efficientdet(phi,input_shape = (224,224,3), num_classes=20, weighted_bifpn=F
             features = build_BiFPN(features, w_bifpn, i, freeze_bn=freeze_bn)
 
     # regress_head = build_regress_head(w_head, d_head)
-    print("shape of output from final BiFPN layer: ", features[0].shape, features[1].shape, features[2].shape)
+    print("shapes of output from final BiFPN layer: ", features[0].shape, features[1].shape, features[2].shape)
     
     feature3 = features[0] ## OUTPUT SIZE OF 28,28,64 for freihand
     # feature2 = features[1]
@@ -211,28 +236,62 @@ def efficientdet(phi,input_shape = (224,224,3), num_classes=20, weighted_bifpn=F
     feature3 = ConnectKeypointLayer(64)(feature3)
 
     # depth = layers.Flatten()(feature3)
+    # depth = layers.Dropout(0.5)(depth)
     # depth = layers.Dense(21, activation = 'linear', name = 'depth')(depth)
     
 
     feature2 = layers.UpSampling2D()(feature3) # from 28 -> 56
     feature2_cont = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature2)
-    feature2 = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'sigmoid', name = 'normalsize')(feature2)
+    # feature2 = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'sigmoid', name = 'size3')(feature3)
     feature1 = layers.UpSampling2D()(feature2_cont) # from 56 -> 112
     feature1_cont = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature1)
-    feature1 = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'sigmoid', name = 'size2')(feature1)
+    # feature1 = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'sigmoid', name = 'size2')(feature1)
     feature_cont = layers.UpSampling2D()(feature1_cont) #from 112 -> 224
-    feature = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'sigmoid', name = 'size3')(feature_cont)
+    # feature = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'sigmoid', name = 'normalsize')(feature_cont)
+    feature = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'linear')(feature_cont)
     # depth = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'linear', name = 'depthmaps')(feature_cont)
 
     # feature = layers.Reshape((224,224))(feature)
     # feature = feature2
 
-    ### TRY WITH SOFTMAX FOR CATEGORICAL
+    # This should be of shape (Batch_size, 21, 2)
+    # Contains the uv_coords for the keyjoints based on heatmaps
+    x_pos = np.empty((num_rows, num_cols), np.float32)
+    y_pos = np.empty((num_rows, num_cols), np.float32)
 
+    # Assign values to positions
+    for i in range(num_rows):
+      for j in range(num_cols):
+        x_pos[i, j] = 2.0 * j / (num_cols - 1.0) - 1.0
+        y_pos[i, j] = 2.0 * i / (num_rows - 1.0) - 1.0
+        # x_pos[i,j] = j
+        # y_pos[i,j] = i
+
+    # x_pos = tf.reshape(x_pos, [num_rows * num_cols])
+    # y_pos = tf.reshape(y_pos, [num_rows * num_cols])
+    image_coords = tf.stack([x_pos,y_pos], axis = -1)
+    # print('image coordinates : ', image_coords)
+
+    uv_coords = spatial_soft_argmax(feature,224, 224, 21, image_coords)
+    # uv_coords = tf.compat.v1.contrib.layers.spatial_softmax(features, name = 'uv_coords')
     
+    uv_coords_out = layers.Layer(name = 'uv_coords')(uv_coords)
+    
+    rel_depth = liftpose(uv_coords)
     # regression = regress_head(feature3)
 
-    model = models.Model(inputs=[image_input], outputs=[feature2, feature1, feature])
+    model = models.Model(inputs=[image_input], outputs=[uv_coords_out, rel_depth])
 
     return model
+
+
+
+
+
+
+
+
+
+
+
 
