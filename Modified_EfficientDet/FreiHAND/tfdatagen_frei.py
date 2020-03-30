@@ -181,6 +181,7 @@ def relative_depth(z):
         z_r.append(p)
     return z_r
 
+
 def gen(num_samp, dir_path, data_set):
     #while True:
     xyz_list, K_list, num_samples = get_raw_data(dir_path, data_set)
@@ -191,10 +192,12 @@ def gen(num_samp, dir_path, data_set):
     z_rel = relative_depth(z_list)
     for i in range(num_samp):
         uv = projectPoints(xyz_list[i], K_list[i])/112 - 1
-        z = z_rel[i]
-        # z = np.array(xyz_list[i])[:,2]
+        # z = np.expand_dims(z_rel[i],axis = 1)
+        # uv_z = np.concatenate((uv, z), axis = -1)
+        # uv_z = np.ndarray.flatten(uv_z)
+        z = z_list[i]
         
-        yield uv,z
+        yield uv, z
 
 
 def render_gaussian_heatmap(output_shape, sigma):
@@ -241,7 +244,7 @@ def tf_generator(dir_path, batch_size=8, num_samp = 100, data_set = 'training'):
     dataset_uv = tf.data.Dataset.from_generator(
         gen,
         output_types=(tf.float32,tf.float32),
-        output_shapes=(tf.TensorShape([21, 2]), tf.TensorShape(21)),
+        output_shapes=(tf.TensorShape([21,2]),tf.TensorShape([21])),
         args=[num_samp, dir_path, data_set])
     # dataset_hm = dataset_uv.map(map_uv_to_hm, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     dataset_im = create_image_dataset(dir_path, num_samp, data_set)

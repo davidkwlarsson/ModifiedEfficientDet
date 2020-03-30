@@ -193,6 +193,7 @@ def get_tfdata(dir_path):
     return labeled_ds
 
 
+# This seems to not work as intended
 class ChangeWLcallback(tf.keras.callbacks.Callback):
     def __init__(self, alpha, beta):
         super(ChangeWLcallback, self).__init__()
@@ -201,7 +202,7 @@ class ChangeWLcallback(tf.keras.callbacks.Callback):
     
     def on_epoch_begin(self, epoch, logs = None):
         print('epoch number : ',  epoch)
-        if epoch == 2:
+        if epoch == 8:
             K.set_value(self.alpha, 0.0)
             K.set_value(self.beta, 1.0)
             for layer in self.model.layers[-13:]:
@@ -221,7 +222,7 @@ def main():
 
     # images, heatmaps, heatmaps2,heatmaps3, coord = get_trainData(dir_path, 100, multi_dim=True)
     batch_size = 16
-    nbr_epochs = 15
+    nbr_epochs = 7
     num_samp = 128000
     num_val_samp = 128
     train_dataset = tf_generator(dir_path, batch_size=batch_size, num_samp=num_samp, data_set = 'training')
@@ -259,8 +260,10 @@ def main():
     # plot_heatmaps_with_coords(images, heatmaps, coord)
 
     # print("Number of images: %s and heatmaps: %s\n" % (len(images), len(heatmaps)))
-    model = efficientdet(phi, input_shape = input_shape,weighted_bifpn=weighted_bifpn,
-                         freeze_bn=freeze_backbone)
+    model = efficientdet(phi, input_shape = input_shape,
+                        include_depth= False,
+                        weighted_bifpn=weighted_bifpn,
+                        freeze_bn=freeze_backbone)
     # model = efficientdet_coord(phi, weighted_bifpn=weighted_bifpn,
     #                       freeze_bn = freeze_backbone)
 
@@ -273,12 +276,12 @@ def main():
     # compile model
     print("Compiling model ... \n")
     # losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce}
-    losses = {"uv_coords" : 'mean_squared_error', 'depth' : 'mean_squared_error'}
+    losses = {"uv_coords" : 'mean_squared_error', 'uv_depth' : 'mean_squared_error'}
     # # losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce, 'depthmaps' : 'mean_squared_error'}
     # lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0}
-    alpha = tf.keras.backend.variable(1.0)
-    beta = tf.keras.backend.variable(0.0)
-    lossWeights = {"uv_coords" : alpha, 'depth' : beta}
+    alpha = 1.0 # tf.keras.backend.variable(1.0)
+    beta = 0.0   # tf.keras.backend.variable(1.0)
+    lossWeights = {"uv_coords" : alpha, 'uv_depth' : beta}
     # lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0, 'depthmaps' : 1.0}
     # focalloss = SigmoidFocalCrossEntropy(reduction=Reduction.SUM_OVER_BATCH_SIZE)
     
@@ -289,21 +292,14 @@ def main():
     model.compile(optimizer = Adam(lr=1e-3),
                     loss = losses, loss_weights = lossWeights,
                     )
-    # model.compile(optimizer='adam', metrics=['accuracy'], loss=weighted_bce)
-    # loss=tf.keras.losses.SigmoidFocalCrossEntropy())
-    # loss=weighted_bce)
-    # loss=tf.keras.losses.SigmoidFocalCrossEntropy())
     # loss=[focal_loss(gamma = 2, alpha = 0.25)])
-    # loss = 'mean_absolute_error'
     # print(model.summary())
     print("Number of parameters in the model : " ,model.count_params())
     # print(get_flops(model))
 
     # model.fit(images, {"normalsize" : heatmaps, "size2": heatmaps2, 'size3': heatmaps3},
     #                             batch_size=16, epochs=100, verbose=1)
-    # K.set_value(model.optimizer.learning_rate, 1e-5)
-    # model.fit(images, heatmaps, batch_size = 16, epochs = 100, verbose = 1)
-
+  
     # callbacks = [
     # keras.callbacks.ModelCheckpoint(
     #     filepath='mymodel_{epoch}',
@@ -316,12 +312,12 @@ def main():
     #     verbose=1)
     #     ]
 
-    WL_change = ChangeWLcallback(alpha, beta)
+    # WL_change = ChangeWLcallback(alpha, beta)
     
     # callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
 
     history = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
-                    ,steps_per_epoch = num_samp//batch_size, epochs = nbr_epochs, verbose=1, callbacks=[WL_change])
+                    ,steps_per_epoch = num_samp//batch_size, epochs = nbr_epochs, verbose=1)#, callbacks=[WL_change])
     # model.save_weights('handposenet')
 
     # layer = model.get_layer('connect_keypoint_layer')
@@ -331,15 +327,29 @@ def main():
     #         print(weight, "with the value = ", values)
     # print(layer[-1]) 
 
-    # images = get_evalImages(dir_path, 10)
+    for layer in model.layers[:-13]:
+        layer.trainable = False
+    for layer in model.layers[-13:]:
+        layer.trainable = True
+
+    lossWeights = {"uv_coords" : 0.0, 'uv_depth' : 1.0}
+    model.compile(optimizer = Adam(lr=1e-3),
+                    loss = losses, loss_weights = lossWeights,
+                    )
+    model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
+                    ,steps_per_epoch = num_samp//batch_size, epochs = nbr_epochs, verbose=1)
+
+
     validgen2 = dataGenerator(dir_path, batch_size= 16, data_set = 'validation')
     images, targets = next(validgen2)
 
 
     # (preds, preds2 ,preds3, depth_pred) = model.predict(images)
-    (preds, depth_pred) = model.predict(images)
+    preds, depth_pred = model.predict(images, verbose = 1)
     preds = np.array(preds)[:10]
     depth_pred = np.array(depth_pred)[:10]
+
+    # uvz_pred = np.reshape((10,21,3))
     # preds = model.predict(images)[:10]
     
     # (heatmaps, heatmaps2, heatmaps3, depth) = targets
@@ -347,6 +357,9 @@ def main():
     coord = np.array(uv_target)
     coord = np.reshape(coord[:10], (10,42))
     depth_target = np.array(depth_target)[:10]
+    
+    # depth_pred = uvz_pred[:,2::3]
+    # preds = np.stack((uvz_pred[:,0::3], uvz_pred[:,1::3]),axis = -1)
 
     print(np.shape(depth_pred), np.shape(depth_target))
     print(np.shape(coord), np.shape(preds))

@@ -195,12 +195,13 @@ def liftpose(uv_coords):
     added = layers.Add()([r0, r1])
     print('added : ', added)
     
-    rel_depth = layers.Dense(21, activation='linear', name = 'depth')(added)
+    rel_depth = layers.Dense(21, activation='linear', name = 'uv_depth')(added)
+    # rel_depth = layers.Reshape((21,3), name = 'uv_depth')(rel_depth)
 
     return rel_depth
 
 
-def efficientdet(phi,input_shape = (224,224,3), num_classes=20, weighted_bifpn=False, freeze_bn=False, score_threshold=0.01):
+def efficientdet(phi,input_shape = (224,224,3),include_depth = False, num_classes=20, weighted_bifpn=False, freeze_bn=False, score_threshold=0.01):
     assert phi in range(7)
     input_size = image_sizes[phi]
     # input_shape = (input_size, input_size, 3)
@@ -277,10 +278,15 @@ def efficientdet(phi,input_shape = (224,224,3), num_classes=20, weighted_bifpn=F
     
     uv_coords_out = layers.Layer(name = 'uv_coords')(uv_coords)
     
-    rel_depth = liftpose(uv_coords)
-    # regression = regress_head(feature3)
-
-    model = models.Model(inputs=[image_input], outputs=[uv_coords_out, rel_depth])
+    # set true if only the final part is trained
+    # if include_depth == True:
+    uv_depth = liftpose(uv_coords)
+    model = models.Model(inputs=[image_input], outputs=[uv_coords_out, uv_depth])
+        # Freeze the backbone layer
+        # for layer in model.layers[:-13]:
+            # layer.trainable = False
+    # else:
+        # model = models.Model(inputs=[image_input], outputs=[uv_coords_out])
 
     return model
 

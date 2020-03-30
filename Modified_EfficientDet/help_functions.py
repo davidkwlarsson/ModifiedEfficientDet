@@ -213,7 +213,7 @@ def get_depth(xyz_list):
     depth = np.zeros(21)
     xyz = np.array(xyz_list)
     for j in range(21):
-        depth[j] = xyz[j, 2]- xyz[0,2]
+        depth[j] = xyz[j, 2] #- xyz[0,2]
     return depth
 
 
@@ -311,6 +311,7 @@ def add_depth_to_coords(coords, depth, K_list):
     
     for i in range(len(coords)):
         K = np.array(K_list[i])
+        # depth[i] += depth[0]
         x_coords = coords[i][0::2]*depth[i]
         y_coords = coords[i][1::2]*depth[i]
         uv_z = np.array([x_coords, y_coords, depth[i]])

@@ -5,7 +5,6 @@ import json
 import numpy as np
 
 sys.path.insert(1, '../')
-# from utils.fh_utils import *
 from help_functions import *
 
 

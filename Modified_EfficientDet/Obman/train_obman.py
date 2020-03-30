@@ -145,7 +145,7 @@ def main():
     # loss=[focal_loss(gamma = 2, alpha = 0.25)])
     # loss = 'mean_absolute_error'
     # print(model.summary())
-    print("Number of parameters in the model : " ,model.count_params())
+    # print("Number of parameters in the model : " ,model.count_params())
     # print(get_flops(model))
 
     # model.fit(images, {"normalsize" : heatmaps, "size2": heatmaps2, 'size3': heatmaps3},
@@ -166,7 +166,7 @@ def main():
     #     ]
 
     model.fit(traingen,  validation_data = validgen, validation_steps = 18
-                    ,steps_per_epoch = 1, epochs = 1, verbose = 1)
+                    ,steps_per_epoch = 100, epochs = 10, verbose = 1)
 
     # model.save_weights('handposenet')
 
@@ -178,6 +178,7 @@ def main():
     # (preds, preds2 ,preds3, depth) = model.predict(images)
     
     (heatmaps, heatmaps2, heatmaps3) = targets
+    (preds, preds2 ,preds3) = targets
 
     # plot_acc_loss(history)
 
@@ -187,7 +188,7 @@ def main():
     coord = heatmaps_to_coord(heatmaps)
     # coord_upsamp = heatmaps_to_coord(preds2)
 
-    plot_predicted_heatmaps(preds, heatmaps)
+    plot_predicted_heatmaps(preds, heatmaps, images)
     # plot_predicted_heatmaps(preds2, heatmaps2)
     plot_predicted_hands_uv(images, coord_preds*4)
 
