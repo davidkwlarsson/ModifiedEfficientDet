@@ -7,13 +7,13 @@ import matplotlib.pyplot as plt
 
 from heatmapsgen import projectPoints
 from data_generators import get_raw_data
-
-
+from plot_functions import *
+from help_functions import *
 def tf_render_heatmap(coord, input_shape, output_shape, num_keypoints, gaussian):
     batch_size = 1  # tf.shape(coord)[0]
     d = 9
    # print(np.shape(coord))
-    gaussian = tf.repeat(gaussian, batch_size * num_keypoints, axis=1)
+    gaussian = tf.keras.backend.repeat(gaussian, batch_size * num_keypoints)#, axis=1)
     #input_shape = output_shape
     x = tf.reshape(coord[:, 0] / input_shape[1] * output_shape[1], [-1])
     y = tf.reshape(coord[:, 1] / input_shape[0] * output_shape[0], [-1])
@@ -58,13 +58,6 @@ def tf_render_heatmap(coord, input_shape, output_shape, num_keypoints, gaussian)
     return heatmap
 
 
-def gen(num_samp, dir_path, dataset='training'):
-    xyz_list, K_list, num_samples = get_raw_data(dir_path, dataset)
-    for i in range(num_samples):
-        uv = projectPoints(xyz_list[i], K_list[i])
-        yield uv
-
-
 def render_gaussian_heatmap(output_shape, sigma):
     x = [i for i in range(output_shape[1])]
     y = [i for i in range(output_shape[0])]
@@ -80,30 +73,8 @@ def render_gaussian_heatmap(output_shape, sigma):
     return heatmap
 
 
-def map_uv_to_hm(uv):
-    """ Create a heatmap for each uv-coordinate """
-    std = 2
-    gaussian = render_gaussian_heatmap((3,3), std) #TODO: This creates a gaussian
-    num_kps = tf.shape(uv)[0]
-    hm = tf_render_heatmap(uv,  (224,224), (56,56), num_kps, gaussian)
-
-    return hm
-
-
-def benchmark(dataset, num_epochs=2):
-    """ Measure the time it takes to process the data wo training """
-    start_time = time.perf_counter()
-    r = []
-    for epoch_num in range(num_epochs):
-        for sample in dataset:
-            r.append(sample)
-    tf.print("Execution time:", time.perf_counter() - start_time)
-
-    return r
-
 def create_image_dataset(dir_path, num_samples, dataset):
     image_path = ''
-    print(dir_path)
     if dataset == 'training':
         image_path = dir_path + 'training/rgb/*'
     elif dataset == 'validation':
@@ -111,10 +82,8 @@ def create_image_dataset(dir_path, num_samples, dataset):
     elif dataset == 'small_dataset':
         image_path = dir_path + 'training/small_dataset/*'
     print('image_path: ', image_path)
-    print('HERE')
     list_ds = tf.data.Dataset.list_files(image_path, shuffle=False)
     list_ds = list_ds.take(num_samples)
-
     def get_tfimage(image_path):
         img = tf.io.read_file(image_path)
         img = tf.image.decode_png(img, channels=3)
@@ -126,22 +95,77 @@ def create_image_dataset(dir_path, num_samples, dataset):
     return list_ds
 
 
+def reshape_target(xyz_list):
+    xyz_new = []
+    for xyz in xyz_list:
+        xyz_new.append(xyz[0])
+        xyz_new.append(xyz[1])
+        xyz_new.append(xyz[2])
+    return np.array(xyz_new)
 
 
-def tf_generator(dir_path, dataset,  batch_size=8, num_samp = 100):
+
+def gen(num_samp, dir_path, dataset='training'):
+    xyz_list, K_list, num_samples = get_raw_data(dir_path, dataset)
+    for i in range(num_samp):
+        xyz = reshape_target(np.array(xyz_list[i]))
+
+       # xy = np.array(xyz_list)[i][:,0:1]
+      #  z =  np.array(xyz_list[i])[:, 2]
+        #z_rel = relative_depth(z)
+     #   print(np.shape(z))
+        yield xyz
+
+
+
+def map_uv_to_hm(uv,xyz):
+    """ Create a heatmap for each uv-coordinate """
+    std = 2
+    gaussian = render_gaussian_heatmap((3,3), std) #TODO: This creates a gaussian
+    num_kps = tf.shape(uv)[0]
+    hm = tf_render_heatmap(uv,  (224,224), (56,56), num_kps, gaussian)
+   # z = z - z[0]
+   # print(np.shape(z))
+    return hm, xyz
+
+
+def benchmark(dataset, num_epochs=2):
+    """ Measure the time it takes to process the data wo training """
+    start_time = time.perf_counter()
+    r = []
+    for epoch_num in range(num_epochs):
+        print(epoch_num)
+        i = 0
+        for sample in dataset:
+           # print(sample)
+            r.append(sample)
+            i += 1
+            if i > 2:
+                break
+        break
+
+
+    tf.print("Execution time:", time.perf_counter() - start_time)
+
+    return r
+
+
+
+
+
+def tf_generator_xyz(dir_path, dataset,  batch_size=3, num_samp = 3):
     """ Create generator, right now seperate one for
         heatmaps and one to read images"""
-    dataset_uv = tf.data.Dataset.from_generator(
+    dataset_xyz = tf.data.Dataset.from_generator(
         gen,
-        output_types=tf.int64,
-        output_shapes=tf.TensorShape([21, 2]),
+        output_types=(tf.float32),
+        output_shapes=(tf.TensorShape([21*3])),
         args=[num_samp, dir_path, dataset])
-    dataset_hm = dataset_uv.map(map_uv_to_hm, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+   # dataset_hm = dataset_uv.map(map_uv_to_hm, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     dataset_im = create_image_dataset(dir_path, num_samp, dataset)
-    dataset = tf.data.Dataset.zip((dataset_im, dataset_hm))
+    dataset = tf.data.Dataset.zip((dataset_im, dataset_xyz))
     batched_dataset = dataset.repeat().batch(batch_size)
     return batched_dataset
-
 
 if __name__ == '__main__':
 
@@ -150,55 +174,55 @@ if __name__ == '__main__':
     except:
         dir_path = "/Users/Sofie/exjobb/freihand/FreiHAND_pub_v2/"  #
 
-
+    print(tf.__version__)
+  #  b = tf.constant([[1, 2], [3, 4]])
+#
+  #  t = tf.keras.backend.repeat(
+  #      b, n = 2
+  #  )
+  #  print(t)
     list_of_samples = os.path.join(dir_path, 'training/rgb/*')
-    num_samp = 8000
-    batch_size = 16
-    dataset1 = tf.data.Dataset.from_generator(
-        gen,
-        output_types=tf.int64,
-        output_shapes=tf.TensorShape([21, 2]),
-        args=[num_samp, dir_path, 'small_dataset'])
-
-    print('dataset from gen')
-    print(dataset1)
-    # print(list(dataset1.take(3).as_numpy_iterator()))
-    dataset2 = dataset1.map(map_uv_to_hm, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    im_data = create_image_dataset(dir_path, num_samp, 'small_dataset')
-    print('dataset after map')
-    dataset = tf.data.Dataset.zip((im_data, dataset2))
-    print(dataset)
-    batched_dataset = dataset.batch(batch_size)
-    print('batched')
-
-    print(batched_dataset)
-
-   # print(list(dataset.take(3).as_numpy_iterator()))
+    num_samp = 3
+    batch_size = 3
+    batched_dataset = tf_generator_depth(dir_path, 'small_dataset',  batch_size=batch_size, num_samp = num_samp)
+    dataset = batched_dataset.unbatch()
+    print('Dataset: ', dataset)
+    #print(list(dataset.take(1).as_numpy_iterator()))
     i = 0
-    set = benchmark(dataset, num_epochs=2)
-    print('after set')
-
+    set = benchmark(dataset, num_epochs=1)
     sum_scatter_hand = True
     plot_image = True
     if sum_scatter_hand:
-        for sample in set:
+        for sample in dataset:
             sum = 0
             for i in range(21):
-                print(np.shape(sample[1]))
-                sum = sum + sample[1][:,:,i]
+             #   print(np.shape(sample[1]))
+                sum = sum + sample[1][0][:,:,i]
+            print(sample[1][1])
             plt.imshow(sum)
             plt.colorbar()
-            plt.savefig('tf_sum_fig_2'+str(i)+'.png')
+            plt.savefig('sum_fig_2_'+str(i)+'.png')
             break
     i = 0
     if plot_image:
-        for sample in set:
+        for sample in dataset:
             sum = sample[0]
             plt.imshow(sum)
-            plt.colorbar()
-            plt.savefig('tf_image' + str(i) + '.png')
+            plt.savefig('image' + str(i) + '.png')
             i = i + 1
             break
+
+    for sample in dataset:
+        coords = heatmaps_to_coord([sample[1][0]])
+        print(coords)
+        coords = np.array(np.reshape(coords[0],(21,2)))
+        print(coords)
+        print(sample[1][1].numpy())
+        plt.imshow(sample[0])
+        plt.savefig('image.png')
+        print(np.concatenate((coords,np.array([sample[1][1].numpy()]).T), axis=1))
+        save_coords(np.concatenate((coords,np.array([sample[1][1].numpy()]).T), axis=1), sample[0])
+        break
 #list_ds = tf.data.Dataset.list_files(filename, shuffle=False)
    # tf.enable_eager_execution
    # tf.enable_v2_behavior()

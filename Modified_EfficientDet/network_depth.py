@@ -1,8 +1,6 @@
 from functools import reduce
-
-from tensorflow.keras import activations
 from tensorflow.compat.v1.keras import backend as K
-import numpy as np
+
 # from keras import layers
 # from keras import initializers
 # from keras import models
@@ -19,97 +17,12 @@ from layers import ClipBoxes, RegressBoxes, FilterDetections, wBiFPNAdd, BatchNo
 from initializers import PriorProbability
 from keypointconnector import *
 from custom_layers import SumLayer, NormLayer
-
+import numpy as np
 w_bifpns = [64, 88, 112, 160, 224, 288, 384]
 image_sizes = [512, 640, 768, 896, 1024, 1280, 1408]
 backbones = [EfficientNetB0, EfficientNetB1, EfficientNetB2,
              EfficientNetB3, EfficientNetB4, EfficientNetB5, EfficientNetB6]
 
-
-def softargmax(x, beta=1e10):
-    x = tf.convert_to_tensor(x)
-    x_range = tf.range(x.shape.as_list()[-1], dtype=x.dtype)
-    return tf.reduce_sum(tf.nn.softmax(x * beta) * x_range, axis=-1)
-
-
-import numpy as np
-
-
-class Spatial_softargmax(layers.Layer):
-
-    def __init__(self, heigth, width, channels, **kwargs):
-        super(Spatial_softargmax, self).__init__(**kwargs)
-        self.H = heigth
-        self.W = width
-        self.C = channels
-
-    def build(self, input_shape):
-        self.image_coords = self.add_weight(name='image_coords',
-                                            shape=(self.H, self.W, 2), initializer='uniform',
-                                            trainable=True)
-        self.build = True
-
-    def get_config(self):
-        base_config = super(Spatial_softargmax, self).get_config()
-
-    def call(self, input):
-        # Assume features is of size [N, H, W, C] (batch_size, height, width, channels)
-        # Transpose it to [N, C, H, W], then reshape to [N * C, H * W] to compute softmax
-        # jointly over the image dimensions
-        features = tf.reshape(tf.transpose(input, [0, 3, 1, 2]), [-1, self.H * self.W])
-        softmax = tf.nn.softmax(features)
-        # Reshape and transpose back to original format.
-        softmax = tf.transpose(tf.reshape(softmax, [-1, self.C, self.H, self.W]), [0, 2, 3, 1])
-        # Assume that image_coords is a tensor of size [H, W, 2] representing the image
-        # coordinates of each pixel.
-        # Convert softmax to shape [N, H, W, C, 1]
-        softmax = tf.expand_dims(softmax, -1)
-        # Convert image coords to shape [H, W, 1, 2]
-        # im_init = tf.initializers.RandomUniform(minval = 0, maxval = 1)
-        # image_coords = tf.Variable(initial_value = np.ones((self.H,self.W,2)), trainable = True, dtype = tf.float32)
-        # print(image_coords)
-        image_coords = tf.expand_dims(self.image_coords, 2)
-        # Multiply (with broadcasting) and reduce over image dimensions to get the result
-        # of shape [N, C, 2]
-        spatial_soft_argmax = tf.reduce_sum(softmax * image_coords, axis=[1, 2])
-
-        # Flatten the images and get the argmax in flatten mode
-        # features = tf.reshape(features, [-1, heigth*width, channels])
-        # spatial_argmax = tf.argmax(features, axis = 1)
-        # print(spatial_argmax, ' number 1')
-        # # 21 tensors with the flattened argmax index
-        # new_spatial = []
-        # spatial_argmax = tf.unstack(spatial_argmax, axis = -1)
-        # for s_argmax in spatial_argmax:
-        #     new_spatial.append(tf.transpose(tf.unravel_index(s_argmax, (heigth,width))))
-        # 21 tensors with shape None,2 at this point
-        print(spatial_soft_argmax)
-        # Stack the 21 tensors at the last axis: None, 2, 21.
-        # spatial_argmax = tf.stack(new_spatial, axis = -1)
-        # spatial_argmax = tf.cast(spatial_argmax, dtype = tf.float32)
-        return spatial_soft_argmax / 224
-
-
-def spatial_soft_argmax(features, heigth, width, channels, image_coords):
-    # Assume features is of size [N, H, W, C] (batch_size, height, width, channels)
-    # Transpose it to [N, C, H, W], then reshape to [N * C, H * W] to compute softmax
-    # jointly over the image dimensions
-    H = heigth
-    W = width
-    C = channels
-    temp = 0.01
-    features = tf.reshape(tf.transpose(features, [0, 3, 1, 2]), [-1, H * W])
-    softmax = tf.nn.softmax(features / temp, axis=-1)
-    softmax = tf.transpose(tf.reshape(softmax, [-1, C, H, W]), [0, 2, 3, 1])
-
-    softmax = tf.expand_dims(softmax, -1)
-
-    image_coords = tf.expand_dims(image_coords, 2)
-    image_coords = tf.expand_dims(image_coords, 0)
-
-    spatial_soft_argmax = tf.reduce_sum(softmax * image_coords, axis=[1, 2])
-
-    return spatial_soft_argmax
 
 def DepthwiseConvBlock(kernel_size, strides, name, freeze_bn=False):
     f1 = layers.DepthwiseConv2D(kernel_size=kernel_size, strides=strides, padding='same',
@@ -239,75 +152,105 @@ def build_wBiFPN(features, num_channels, id, freeze_bn=False):
     return P3_out, P4_out, P5_out#, P6_out , P7_out
 
 
-def build_regress_head(width, depth, num_anchors=9):
-    options = {
-        'kernel_size': 3,
-        'strides': 1,
-        'padding': 'same',
-        # 'kernel_initializer': initializers.normal(mean=0.0, stddev=0.01, seed=None),
-        'kernel_initializer': initializers.RandomNormal(mean=0.0, stddev=0.01, seed=None),
-        'bias_initializer': 'zeros'
-    }
+# def build_regress_head(width, depth, num_anchors=9):
+#     options = {
+#         'kernel_size': 3,
+#         'strides': 1,
+#         'padding': 'same',
+#         # 'kernel_initializer': initializers.normal(mean=0.0, stddev=0.01, seed=None),
+#         'kernel_initializer': initializers.RandomNormal(mean=0.0, stddev=0.01, seed=None),
+#         'bias_initializer': 'zeros'
+#     }
+#
+#     inputs = layers.Input(shape=(None, None, width))
+#     outputs = inputs
+#     for i in range(depth):
+#         outputs = layers.Conv2D(
+#             filters=width,
+#             activation='relu',
+#             **options
+#         )(outputs)
+#
+#     outputs = layers.Conv2D(num_anchors * 4, **options)(outputs)
+#     # (b, num_anchors_this_feature_map, 4)
+#     outputs = layers.Reshape((-1, 4))(outputs)
+#
+#     return models.Model(inputs=inputs, outputs=outputs, name='box_head')
 
-    inputs = layers.Input(shape=(None, None, width))
-    outputs = inputs
-    for i in range(depth):
-        outputs = layers.Conv2D(
-            filters=width,
-            activation='relu',
-            **options
-        )(outputs)
 
-    outputs = layers.Conv2D(num_anchors * 4, **options)(outputs)
-    # (b, num_anchors_this_feature_map, 4)
-    outputs = layers.Reshape((-1, 4))(outputs)
+def spatial_soft_argmax(features, heigth, width, channels, image_coords):
+    # Assume features is of size [N, H, W, C] (batch_size, height, width, channels)
+    # Transpose it to [N, C, H, W], then reshape to [N * C, H * W] to compute softmax
+    # jointly over the image dimensions
+    H = heigth
+    W = width
+    C = channels
+    temp = 0.01
+    features = tf.reshape(tf.transpose(features, [0, 3, 1, 2]), [-1, H * W])
+    print(tf.math.argmax(features, axis=-1))
+    # print(tf.math.reduce_max(features, axis = -1))
+    softmax = tf.nn.softmax(features / temp, axis=-1)
+    # print(softmax)
+    print(tf.math.argmax(softmax, axis=-1))
+    # Reshape and transpose back to original format.
+    softmax = tf.transpose(tf.reshape(softmax, [-1, C, H, W]), [0, 2, 3, 1])
+    # Assume that image_coords is a tensor of size [H, W, 2] representing the image
+    # coordinates of each pixel.
+    # Convert softmax to shape [N, H, W, C, 1]
+    softmax = tf.expand_dims(softmax, -1)
+    # Convert image coords to shape [H, W, 1, 2]
+    # im_init = tf.initializers.RandomUniform(minval = 0, maxval = 1)
+    # image_coords = tf.Variable(initial_value = np.ones((self.H,self.W,2)), trainable = True, dtype = tf.float32)
+    # print(image_coords)
+    image_coords = tf.expand_dims(image_coords, 2)
+    image_coords = tf.expand_dims(image_coords, 0)
+    # print(softmax*image_coords)
+    # print(softmax)
+    # Multiply (with broadcasting) and reduce over image dimensions to get the result
+    # of shape [N, C, 2]
+    # print(softmax)
+    # print(image_coords)
+    spatial_soft_argmax = tf.reduce_sum(softmax * image_coords, axis=[1, 2])
 
-    return models.Model(inputs=inputs, outputs=outputs, name='box_head')
+    # Flatten the images and get the argmax in flatten mode
+    # features = tf.reshape(features, [-1, heigth*width, channels])
+    # spatial_argmax = tf.argmax(features, axis = 1)
+    # print(spatial_argmax, ' number 1')
+    # # 21 tensors with the flattened argmax index
+    # new_spatial = []
+    # spatial_argmax = tf.unstack(spatial_argmax, axis = -1)
+    # for s_argmax in spatial_argmax:
+    #     new_spatial.append(tf.transpose(tf.unravel_index(s_argmax, (heigth,width))))
+    # 21 tensors with shape None,2 at this point
+    # print(spatial_soft_argmax)
+    # Stack the 21 tensors at the last axis: None, 2, 21.
+    # spatial_argmax = tf.stack(new_spatial, axis = -1)
+    # spatial_argmax = tf.cast(spatial_argmax, dtype = tf.float32)
+    return spatial_soft_argmax
 
-def lift_model(nbr_outputs):
-    #https://arxiv.org/pdf/1910.12029v2.pdf
-    input_shape = (42)
-    uv_input = layers.Input(input_shape)
-    r0 = layers.Dense(400, activation = 'linear')(uv_input)
+
+def liftpose(uv_coords, output_shape):
+    # Save the output layer and then pop it to remove
+    uv_coords = layers.Flatten()(uv_coords)
+    print(uv_coords)
+    r0 = layers.Dense(400, activation='linear')(uv_coords)
+    print('r0 : ', r0)
     r1 = r0
     for i in range(2):
         ## Residual block ##
         r1 = layers.BatchNormalization()(r1)
-        r1 = layers.Dropout(0.5)(r1)
-        r1 = activations.relu(r1)
+        r1 = layers.Dropout(0.2)(r1)
+        r1 = tf.keras.activations.relu(r1)
         r1 = layers.Dense(400, activation='linear')(r1)
 
     added = layers.Add()([r0, r1])
+    print('added : ', added)
 
-    depth = layers.Dense(nbr_outputs, activation='linear')(added)
+    rel_depth = layers.Dense(output_shape, activation='linear', name='xyz')(added)
+    # rel_depth = layers.Reshape((21,3), name = 'uv_depth')(rel_depth)
 
+    return rel_depth
 
-    model = models.Model(inputs=[uv_input], outputs=[depth])
-
-    return model
-
-
-def lift_model(nbr_outputs):
-    #https://arxiv.org/pdf/1910.12029v2.pdf
-    input_shape = (42)
-    uv_input = layers.Input(input_shape)
-    r0 = layers.Dense(400, activation = 'linear')(uv_input)
-    r1 = r0
-    for i in range(2):
-        ## Residual block ##
-        r1 = layers.BatchNormalization()(r1)
-        r1 = layers.Dropout(0.1)(r1)
-        r1 = activations.relu(r1)
-        r1 = layers.Dense(400, activation='linear')(r1)
-
-    added = layers.Add()([r0, r1])
-
-    depth = layers.Dense(nbr_outputs, activation='linear', name='xyz')(added)
-
-
-    model = models.Model(inputs=[uv_input], outputs=[depth])
-
-    return model
 
 def efficientdet(phi, num_classes=20, weighted_bifpn=False, freeze_bn=False, score_threshold=0.01):
     assert phi in range(7)
@@ -343,69 +286,40 @@ def efficientdet(phi, num_classes=20, weighted_bifpn=False, freeze_bn=False, sco
     #depth = layers.Flatten()(feature3)
     #depth = layers.Dense(21, activation = 'linear', name = 'depth')(depth)
     #split = tf.split(feature3, 32, axis = -1)
+
+
     feature2 = layers.UpSampling2D()(feature3) # from 28 -> 56
     #feature2_cont = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature2)
     feature2 = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature2)
-    feature2 = layers.Dropout(0.2)(feature2)
-    feature2 = layers.Conv2D(21, kernel_size=1, strides=1, padding="same", activation = 'sigmoid', name = 'normalsize')(feature2)
+   # feature2 = layers.Dropout(0.2)(feature2)
+    feature2 = layers.Conv2D(21, kernel_size = 1, strides = 1, padding = "same", activation = 'sigmoid', name = 'normalsize')(feature2)
+    num_rows, num_cols = (56,56)
 
-    model = models.Model(inputs=[image_input], outputs=[feature2])
+    # This should be of shape (Batch_size, 21, 2)
+    # Contains the uv_coords for the keyjoints based on heatmaps
+    x_pos = np.empty((num_rows, num_cols), np.float32)
+    y_pos = np.empty((num_rows, num_cols), np.float32)
 
-    #feature1 = layers.UpSampling2D()(feature2_cont) # from 56 -> 112
-    #feature1_cont = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature1)
-    #feature1 = layers.Conv2D(21, kernel_size = 1, strides = 1, padding = "same", activation = 'sigmoid', name = 'size2')(feature1)
-    #feature_cont = layers.UpSampling2D()(feature1_cont) #from 112 -> 224
-    #feature = layers.Conv2D(21, kernel_size = 1, strides = 1, padding = "same", activation = 'sigmoid', name = 'size3')(feature_cont)
-    # depth = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'linear', name = 'depthmaps')(feature_cont)
+    # Assign values to positions
+    for i in range(num_rows):
+        for j in range(num_cols):
+            x_pos[i, j] = 2.0 * j / (num_cols - 1.0) - 1.0
+            y_pos[i, j] = 2.0 * i / (num_rows - 1.0) - 1.0
+            # x_pos[i,j] = j
+            # y_pos[i,j] = i
 
+    # x_pos = tf.reshape(x_pos, [num_rows * num_cols])
+    # y_pos = tf.reshape(y_pos, [num_rows * num_cols])
+    image_coords = tf.stack([x_pos, y_pos], axis=-1)
+    # print('image coordinates : ', image_coords)
 
-    # Structure of the residual block - TODO: Look at the blocks in mobilenet
-    # get 2k coordinates in some way as input
-    # normalizing layer
-            # • The first is the implementation of the normalization layer, which is the first layer of the proposed
-            # PoseLifter. Our novel normalization layer normalizes
-            # the input 2D pose and adds the 2D location and scale
-            # information of the target subject as intermediate features. These added features enable the estimation of
-            # the root’s absolute 3D coordinates and considerably
-            # improve the performance of root-relative 3D pose estimation
-    # Linear activation
-    #depth = layers.BatchNormalization(feature3)
-    # ReLu
-    # Dropout 0.5
-    # Linear activation, 4096 features
+    uv_coords = spatial_soft_argmax(feature2, num_rows, num_rows, 21, image_coords)
 
-    #depth = layers.Flatten()(feature3)
-    #depth = layers.Dropout(0.2)(depth)
-   # depth = layers.Dense(21, activation = 'linear', name = 'depth')(depth)
-    # depth = layers.UpSampling2D()(feature3)  # from 28 -> 56
-    # depth = layers.Conv2D(21, kernel_size=3, strides=1, padding="same", activation='sigmoid')(depth)
-    # depth = layers.UpSampling2D()(depth)  # from 56 -> 112
-    # depth = layers.Conv2D(21, kernel_size=3, strides=1, padding="same", activation='sigmoid')(depth)
-    # depth = layers.UpSampling2D()(depth)  # from 112 -> 224
-    # depth = layers.Conv2D(21, kernel_size=1, strides=1, padding="same", activation='sigmoid')(depth)
-    #
-    # depth = NormLayer()(feature_cont)
-    # depth = layers.Multiply()([depth, feature])
-
-
-
-    # depth = layers.Lambda(lambda x: K.sum(x, axis=1))(depth)
-    # depth = layers.Lambda(lambda x: K.sum(x, axis=1),name='depthmaps')(depth)
-    # depth = SumLayer()(depth)
-
-    #depth = layers.Conv2D(21, kernel_size=1, strides=1, padding="same", activation='sigmoid')(depth)
-
-    #depth = layers.Lambda(lambda x: K.sum(x, axis=1), name='depthmaps')(depth)
-
-    #depth = K.sum(depth, axis=1)
-    # feature = layers.Reshape((224,224))(feature)
-    # feature = feature2
-
-    ### TRY WITH SOFTMAX FOR CATEGORICAL
-
-    
-    # regression = regress_head(feature3)
-
+    # set true if only the final part is trained
+    # if include_depth == True:
+    output_shape = 21*3
+    uv_depth = liftpose(uv_coords, output_shape)
+    model = models.Model(inputs=[image_input], outputs=[uv_depth])
     #model = models.Model(inputs=[image_input], outputs=[feature2, depth])
 
     return model

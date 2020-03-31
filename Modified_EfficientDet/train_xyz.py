@@ -28,9 +28,10 @@ from help_functions import *
 from plot_functions import *
 from tf_generator import tf_generator, benchmark
 from tf_generator_depth import tf_generator_depth
+from tf_generator_xyz import tf_generator_xyz
 from tensorflow.keras.optimizers import Adam, SGD
 import matplotlib.pyplot as plt
-from network import efficientdet # , efficientdet_coord
+from network_depth import efficientdet # , efficientdet_coord
 from losses import *
 
 from data_generators import *
@@ -86,6 +87,21 @@ def get_flops(model):
 
             return flops.total_float_ops
 
+def shape_target(xyz_list):
+    xyz_new_list = []
+    for i in range(len(xyz_list)):
+        xyz_new = []
+        n = 0
+        for j in range(0,21*3,3):
+            xyz_new.append([])
+           # print('i, ', i)
+           # print('j, ', j)
+            xyz_new[n].append(np.array(xyz_list)[i][j])
+            xyz_new[n].append(np.array(xyz_list)[i][j+1])
+            xyz_new[n].append(np.array(xyz_list)[i][j+2])
+            n += 1
+        xyz_new_list.append(xyz_new)
+    return np.array(xyz_new_list)
 
 def main():
     nbr_epochs = 1
@@ -137,139 +153,80 @@ def main():
     batch_size = 8
     num_val_samp = 560
     #train_dataset = tf_generator(dir_path, 'training', batch_size=batch_size, num_samp=num_samp)
-    traingen = tf_generator(dir_path, dataset, batch_size=batch_size, num_samp=num_samp)
-    validgen = tf_generator(dir_path, 'validation', batch_size=batch_size, num_samp=num_val_samp)
-   # traingen = train_dataset.prefetch(batch_size)
-   # validgen = valid_dataset.prefetch(batch_size)
+
+    traingen = tf_generator_xyz(dir_path, dataset, batch_size=batch_size, num_samp=num_samp)
+    validgen = tf_generator_xyz(dir_path, 'validation', batch_size=batch_size, num_samp=num_val_samp)
+
+    traingen = traingen.prefetch(batch_size)
+    validgen = validgen.prefetch(batch_size)
 
     # print("Number of images: %s and heatmaps: %s\n" % (len(images), len(heatmaps)))
-    model = efficientdet(phi, weighted_bifpn=weighted_bifpn,
-                         freeze_bn=freeze_backbone)
+   # model = efficientdet(phi, weighted_bifpn=weighted_bifpn,
+   #                      freeze_bn=freeze_backbone)
     # model = efficientdet_coord(phi, weighted_bifpn=weighted_bifpn,
     #
     #                       freeze_bn = freeze_backbone)
     depth = False
+    only_depth = True
     if depth:
-        losses = {"normalsize": weighted_bce, "depth": 'mean_squared_error'}
+        losses = {"normalsize": weighted_bce, "xyz": 'mean_squared_error'}
+        lossWeights = {"normalsize": 1, "xyz": 0}
+    elif only_depth:
+        losses = {"xyz": 'mean_squared_error'}#, "depth": 'mean_squared_error'}
+        lossWeights = {"xyz": 1}
     else:
         losses = {"normalsize": weighted_bce}#, "depth": 'mean_squared_error'}
+        lossWeights = {"normalsize": 1}
+
     # freeze backbone layers
-    if freeze_backbone:
+   # if freeze_backbone:
         # 227, 329, 329, 374, 464, 566, 656
-        for i in range(1, [227, 329, 329, 374, 464, 566, 656][phi]):
-            model.layers[i].trainable = False
-    load = False
-    if load:
-        model.load_weights('model.h5', by_name=True)
-        for layer in model.layers:
-            layer.trainable = False
-        model.compile(optimizer=Adam(lr=1e-3), loss=losses)
+   #     for i in range(1, [227, 329, 329, 374, 464, 566, 656][phi]):
+    #        model.layers[i].trainable = False
+    model = efficientdet(phi, weighted_bifpn=weighted_bifpn,
+                         freeze_bn=freeze_backbone)
+    model.load_weights('model.h5', by_name=True)
+    # Freeze the hm layers
+    for layer in model.layers[:-13]:
+        layer.trainable = False
+    # compile model
+    print("Compiling model ... \n")
+    model.compile(optimizer=Adam(lr=1e-3), loss=losses, loss_weights=lossWeights)
+    print("Number of parameters in the model : ", model.count_params())
+    print(model.summary())
+    print(traingen)
+    print(validgen)
 
-    else:
-        # compile model
-        print("Compiling model ... \n")
-        model.compile(optimizer=Adam(lr=1e-3), loss=losses)
-        print("Number of parameters in the model : ", model.count_params())
-       # print(model.summary())
+    callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
+    history = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
+                    ,steps_per_epoch = num_samp//batch_size, epochs = nbr_epochs, verbose=1, callbacks=[callback])
+    plot_acc_loss(history)
 
-        callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
-        history = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
-                       ,steps_per_epoch = num_samp//batch_size, epochs = nbr_epochs, verbose=1, callbacks=[callback])
-        model.save_weights("model.h5")
-
-        plot_acc_loss(history)
-
-    #toc = time.perf_counter()
-    # model.save_weights('handposenet')
-   # validgen2 = mytfdataGenerator(dir_path, batch_size=16, data_set = 'validation')
-   # validgen2 = tf_generator(dir_path, batch_size=4)
-  #  validgen2 = create_image_dataset(dir_path, 10)
-  #  images = validgen2
-  #  images = images.batch(10)
-   # preds3 = model.predict(images)
-  #  ### EVALUATE RESULT (not done)!
-   # evaluate_result(dir_path, preds3)
-
-
-    validgen2 = dataGenerator(dir_path, batch_size=20, data_set='validation')
-
+    validgen2 = dataGenerator_xyz(dir_path, batch_size=20, data_set='validation')
+    print(validgen2)
     (images, targets) = next(validgen2)
-
+    print(np.shape(images))
     preds = model.predict(images)
-    depth = False
-    pred_hm = preds#[0]
-    true_hm = targets[0]
+    depth = True
+    print(np.shape(preds))
+    print(np.shape(targets))
+
+    pred_xyz = shape_target(preds)#[0]
+    true_xyz = targets[0]
     print('targets ', np.shape(targets))
     print('images ', np.shape(images))
-    print('pred_hm', np.shape(pred_hm))
-    print('true_hm', np.shape(true_hm))
-    if(depth):
-        pred_depth = preds[1]
-        true_depth = targets[1]
-
-        print('true_depth', np.shape(true_depth))
-        print('pred_depth', np.shape(pred_depth))
-
-
-    pred_coord = heatmaps_to_coord(pred_hm)
-    true_coord = heatmaps_to_coord(true_hm)
-    np.savetxt('uv_preds.csv',pred_coord,delimiter=',')
-    np.savetxt('uv_targets.csv',true_coord,delimiter=',')
+    print('pred_xyz', np.shape(pred_xyz))
+    print('true_xyz', np.shape(true_xyz))
+  #  if(depth):
+  #      pred_depth = preds[1]
+  #      true_depth = targets[1]
+  #      print('true_depth', np.shape(true_depth))
+  #      print('pred_depth', np.shape(pred_depth))
     images = images[0]
-    plot_predicted_heatmaps(pred_hm, true_hm)
-
-    # plot_predicted_depthmaps(depth)
-    # print("Predicted first depthmap")
-    # print(depth_tarval[0])
-    # print(depth_predval[0])
-
-
-    # Skeleton plot
-    plot_predicted_hands_uv(images, pred_coord*4, 'uv_hands_pred.png')
-    plot_predicted_hands_uv(images, true_coord*4, 'uv_hands.png')
-
-    # xyz_pred = add_depth_to_coords(coord_preds[0], depth[0])
-    # draw_3d_skeleton(xyz_pred, (224*2,224*2))
-    # print(coord)
-    # Scatter plot
-    plot_predicted_coordinates(images, pred_coord*4, true_coord*4)
-    # plot_predicted_coordinates(images, coord_upsamp*2, coord)
-
-    plot_hm_with_images(pred_hm, true_hm, images, 0, 4)
-    plot_hm_with_images(pred_hm, true_hm, images, 1, 4)
-    plot_hm_with_images(pred_hm, true_hm, images, 2, 4)
-    plot_hm_with_images(pred_hm, true_hm, images, 3, 4)
-    plot_hm_with_images(pred_hm, true_hm, images, 4, 4)
-
-    n = 0
-    for sample in pred_hm:
-        #print(np.shape(sample))
-        sum = 0
-        for k in range(21):
-            sum = sum + sample[:, :, k]
-        plt.figure()
-        plt.imshow(sum)
-        plt.colorbar()
-        plt.savefig('tf_sum_fig_preds_hm' + str(n) + '.png')
-        plt.close()
-        n = n + 1
-
-    i = 0
-    if depth:
-        for i in range(10):
-            coords = heatmaps_to_coord([pred_hm[i]])
-            print('coords,' , np.shape(coords))
-            coords = np.array(np.reshape(coords, (21, 2)))
-            print(np.shape(coords))
-            print('depth')
-            print(np.shape(pred_depth[i]))
-            print('pred_hm')
-            print(np.shape(pred_hm[i]))
-            plt.imshow(images[0])
-            plt.savefig('image'+ str(i) +'.png')
-           # print(np.concatenate((coords, np.array([sample[1]]).T), axis=1))
-            save_coords(np.concatenate((coords, np.array([pred_depth[i]]).T), axis=1), images[i], 'from_train')
-
+    for i in range(10):
+        save_coords(pred_xyz[i], images[i], 'pred_' + str(i))
+        save_coords(true_xyz[i], images[i], 'target_' + str(i))
+       # roots.append(np.array(xyz_preds[i])[0][2])
 
 
 if __name__ == '__main__':
