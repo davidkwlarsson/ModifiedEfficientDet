@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
 from help_functions import get_evalImages
 from utils.fh_utils import *
+from data_generators import get_raw_data
+
 
 color_hand_joints =   [[1.0, 0.0, 0.0],
                        [0.0, 0.0, 0.6], [0.0, 0.0, 1.0], [0.2, 0.2, 1.0], [0.4, 0.4, 1.0],  # thumb
@@ -34,15 +36,15 @@ def draw_3d_skeleton(pose_cam_xyz, image_size):
 
     for joint_ind in range(pose_cam_xyz.shape[0]):
         ax.plot(pose_cam_xyz[joint_ind:joint_ind + 1, 0], pose_cam_xyz[joint_ind:joint_ind + 1, 1],
-                np.abs(pose_cam_xyz[joint_ind:joint_ind + 1, 2]), '.', c=color_hand_joints[joint_ind], markersize=marker_sz)
+                pose_cam_xyz[joint_ind:joint_ind + 1, 2], '.', c=color_hand_joints[joint_ind], markersize=marker_sz)
         if joint_ind == 0:
             continue
         elif joint_ind % 4 == 1:
-            ax.plot(pose_cam_xyz[[0, joint_ind], 0], pose_cam_xyz[[0, joint_ind], 1], np.abs(pose_cam_xyz[[0, joint_ind], 2]),
+            ax.plot(pose_cam_xyz[[0, joint_ind], 0], pose_cam_xyz[[0, joint_ind], 1], pose_cam_xyz[[0, joint_ind], 2],
                     color=color_hand_joints[joint_ind], lineWidth=line_wd)
         else:
             ax.plot(pose_cam_xyz[[joint_ind - 1, joint_ind], 0], pose_cam_xyz[[joint_ind - 1, joint_ind], 1],
-                    np.abs(pose_cam_xyz[[joint_ind - 1, joint_ind], 2]), color=color_hand_joints[joint_ind],
+                    pose_cam_xyz[[joint_ind - 1, joint_ind], 2], color=color_hand_joints[joint_ind],
                     linewidth=line_wd)
 
 
@@ -60,16 +62,33 @@ def draw_3d_skeleton(pose_cam_xyz, image_size):
     # return ret
 
 if __name__ == '__main__':
+    scale = True
+    add_root = False
     dir_path = "/Users/Sofie/exjobb/freihand/FreiHAND_pub_v2/"  #
     images = get_evalImages(dir_path, 10, dataset='validation')
+    xyz_list, K_list, num_samples, s_list = get_raw_data(dir_path, 'validation')
  #   print(np.shape(images))
     uv_t = np.loadtxt('uv_targets.csv', delimiter=',')*4
     uv = np.loadtxt('uv_preds.csv', delimiter=',')*4
     for i in range(10):
+        if scale:
+            s = s_list[i]
+        else:
+            s=1
         coords = np.loadtxt('pose_cam_xyz_pred_'+str(i)+'.csv', delimiter=',')
         coords_t = np.loadtxt('pose_cam_xyz_target_'+str(i)+'.csv', delimiter=',')
-        print(np.shape(uv_t))
-      #  print(coords_t)
+        if add_root:
+            xyz = np.array(xyz_list[i])
+            print(xyz.shape)
+            coords_t = coords_t*s
+            coords = coords*s
+            coords[:,2] = coords[:,2]  + xyz[0,2]
+            coords_t[:,2] = coords_t[:,2]+ xyz[0,2]
+        else:
+            coords_t = coords_t*s
+            coords = coords*s
+            #coords[:, 2] = coords[:, 2] * s
+            #coords_t[:, 2] = coords_t[:, 2] * s
         draw_3d_skeleton(coords, (224*2, 224*2))
         draw_3d_skeleton(coords_t, (224*2, 224*2))
         plt.figure()

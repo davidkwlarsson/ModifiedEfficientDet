@@ -110,7 +110,7 @@ def get_uv_data(xyz_list, K_list, num_samples):
     uv_all = []
     for idx in range(num_samples):
         uv = projectPoints(xyz_list[idx], K_list[idx])
-      #  uv = uv[:, ::-1]
+        #uv = uv[:, ::-1]
         uv_all.append(uv)
 #        z.append(np.array(xyz_list[idx])[:,2])
     return uv_all
@@ -135,7 +135,9 @@ def get_raw_data(dir_path, data_set='training'):
         xyz_list *= 4
         num_samples = len(xyz_list)
         K_list = json_load(os.path.join(dir_path, 'training_K.json'))[:-560]
+        s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[:-560]
         K_list *= 4
+        s_list *= 4
         #indicies = [i for i in range(32000)] + [i for i in range(32560,64560)] + [i for i in range(65120,97120)] + [i for i in range(97680,129680)]
         print("Total number of training samples: ", num_samples)
     elif data_set == 'small_dataset':
@@ -143,6 +145,9 @@ def get_raw_data(dir_path, data_set='training'):
         xyz_list *= 4
         num_samples = len(xyz_list)
         K_list = json_load(os.path.join(dir_path, 'training_K.json'))[:100]
+        s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[:100]
+        s_list *= 4
+
         K_list *= 4
         # indicies = [i for i in range(32000,32560)] + [i for i in range(64560,65120)] + [i for i in range(97120, 97680)] + [i for i in range(129680,130240)]
         print("Total number of small_daraset samples: ", num_samples)
@@ -151,6 +156,9 @@ def get_raw_data(dir_path, data_set='training'):
         xyz_list *= 4
         num_samples = len(xyz_list)
         K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-560:]
+        s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[-560:]
+        s_list *= 4
+
         K_list *= 4
        # indicies = [i for i in range(32000,32560)] + [i for i in range(64560,65120)] + [i for i in range(97120, 97680)] + [i for i in range(129680,130240)]
         print("Total number of validation samples: ", num_samples)
@@ -158,6 +166,7 @@ def get_raw_data(dir_path, data_set='training'):
         xyz_list = json_load(os.path.join(dir_path, 'evaluation_xyz.json'))
         num_samples = len(xyz_list)
         K_list = json_load(os.path.join(dir_path, 'evaluation_K.json'))
+        s_list = json_load(os.path.join(dir_path, 'evaluation_scale.json'))
 
     else:
         print("No specified data found!")
@@ -165,7 +174,7 @@ def get_raw_data(dir_path, data_set='training'):
         sys.exit()
 
 
-    return xyz_list, K_list, num_samples#, indicies, num_samples
+    return xyz_list, K_list, num_samples, s_list#, indicies, num_samples
 
 
 
@@ -278,8 +287,94 @@ def dataGenerator(dir_path, batch_size = 16, data_set = 'training'):
     yield ([images], [hms])
 
 
-def dataGenerator_depth(dir_path, batch_size=16, data_set='training'):
+
+
+def reshape_target(xyz_list):
+    xyz_new = []
+    for xyz in xyz_list:
+        xyz_new.append(xyz[0])
+        xyz_new.append(xyz[1])
+        xyz_new.append(xyz[2])
+    return np.array(xyz_new)
+
+
+
+def dataGenerator_xyz(dir_path, batch_size=16, data_set='training'):
     # hm_all = np.array(read_csv(dir_path+'/hm.csv'))
+    print(dir_path)
+    r = 1
+  #  gaussian = create_gaussian_blob(2, r)
+    indicies = []
+    if data_set == 'training':
+        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[:-560]
+        xyz_list *= 4
+        num_samples = len(xyz_list)
+        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[:-560]
+        K_list *= 4
+        s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[:-560]
+        s_list *= 4
+        indicies = [i for i in range(32000)] + [i for i in range(32560,64560)] + [i for i in range(65120,97120)] + [i for i in range(97680,129680)]
+        print("Total number of training samples: ", num_samples)
+    elif data_set == 'small_dataset':
+        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[:100]
+        xyz_list *= 4
+        num_samples = len(xyz_list)
+        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[:100]
+        K_list *= 4
+        s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[:100]
+        s_list *= 4
+        indicies = [i for i in range(32000,32560)] + [i for i in range(64560,65120)] + [i for i in range(97120, 97680)] + [i for i in range(129680,130240)]
+        print("Total number of small_daraset samples: ", num_samples)
+    elif data_set == 'validation':
+        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-560:]
+        xyz_list *= 4
+        num_samples = len(xyz_list)
+        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-560:]
+        K_list *= 4
+        s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[-560:]
+        s_list *= 4
+        indicies = [i for i in range(32000,32560)] + [i for i in range(64560,65120)] + [i for i in range(97120, 97680)] + [i for i in range(129680,130240)]
+        print("Total number of validation samples: ", num_samples)
+    elif data_set == 'evaluation':
+        xyz_list = json_load(os.path.join(dir_path, 'evaluation_xyz.json'))
+        num_samples = len(xyz_list)
+        K_list = json_load(os.path.join(dir_path, 'evaluation_K.json'))
+        s_list = json_load(os.path.join(dir_path, 'evaluation_scale.json'))
+        s_list *= 4
+    else:
+        print("No specified data found!")
+        print('dir_path')
+        sys.exit()
+
+    images = []
+    xyz_all = []
+    uv_all = []
+    K_inv = []
+    for (i, idx) in enumerate(indicies):
+        # print(data_set)
+        img = read_img(idx, dir_path, data_set) / 255.0
+
+        #print('imshape',np.shape(img))
+        images.append(img)
+        if i >= batch_size-1:
+            break
+    for i in range(len(xyz_list)):
+        xy = np.array(xyz_list[i])[:, 0:-1]/s_list[i]
+        z = np.array(xyz_list[i])[:, 2]/s_list[i]
+        z_rel = z - z[0]
+        xyz = np.hstack((xy, np.expand_dims(z_rel, axis=1)))
+       # xyz = np.ndarray.flatten(xyz)
+        xyz_all.append(xyz)
+       # K_inv.append(np.array(np.linalg.inv(K_list[i])))
+        uv = projectPoints(xyz_list[i], K_list[i])
+        uv_all.append(uv)
+
+        if i >= batch_size-1:
+            break
+    yield ([images], [xyz_all, uv_all]) #,uv_all
+
+
+def dataGenerator_hm(dir_path, batch_size = 16, data_set = 'training'):
     print(dir_path)
     r = 1
     gaussian = create_gaussian_blob(2, r)
@@ -290,58 +385,72 @@ def dataGenerator_depth(dir_path, batch_size=16, data_set='training'):
         num_samples = len(xyz_list)
         K_list = json_load(os.path.join(dir_path, 'training_K.json'))[:-560]
         K_list *= 4
-        indicies = [i for i in range(32000)] + [i for i in range(32560, 64560)] + [i for i in range(65120, 97120)] + [i
-                                                                                                                      for
-                                                                                                                      i
-                                                                                                                      in
-                                                                                                                      range(
-                                                                                                                          97680,
-                                                                                                                          129680)]
-        print("Total number of training samples: ", num_samples, " and ", len(indicies))
-
+        s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[:-560]
+        s_list *= 4
+        indicies = [i for i in range(32000)] + [i for i in range(32560, 64560)] + [i for i in range(65120, 97120)] + [i for i in range(97680, 129680)]
+        print("Total number of training samples: ", num_samples)
+    elif data_set == 'small_dataset':
+        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[:100]
+        xyz_list *= 4
+        num_samples = len(xyz_list)
+        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[:100]
+        K_list *= 4
+        s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[:100]
+        s_list *= 4
+        indicies = [i for i in range(32000, 32560)] + [i for i in range(64560, 65120)] + [i for i in range(97120, 97680)] + [i for i in range(   129680, 130240)]
+        print("Total number of small_daraset samples: ", num_samples)
     elif data_set == 'validation':
         xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-560:]
         xyz_list *= 4
         num_samples = len(xyz_list)
         K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-560:]
         K_list *= 4
+        s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[-560:]
+        s_list *= 4
         indicies = [i for i in range(32000, 32560)] + [i for i in range(64560, 65120)] + [i for i in
                                                                                           range(97120, 97680)] + [i for
                                                                                                                   i in
                                                                                                                   range(
                                                                                                                       129680,
                                                                                                                       130240)]
-        print("Total number of validation samples: ", num_samples, " and ", len(indicies))
-    # dir_path = dir_path + 'validation/'
+        print("Total number of validation samples: ", num_samples)
     elif data_set == 'evaluation':
         xyz_list = json_load(os.path.join(dir_path, 'evaluation_xyz.json'))
         num_samples = len(xyz_list)
         K_list = json_load(os.path.join(dir_path, 'evaluation_K.json'))
-
+        s_list = json_load(os.path.join(dir_path, 'evaluation_scale.json'))
+        s_list *= 4
     else:
         print("No specified data found!")
+        print('dir_path')
         sys.exit()
 
     images = []
+    xyz_all = []
     hms = []
-    depth = []
+
     for (i, idx) in enumerate(indicies):
         # print(data_set)
         img = read_img(idx, dir_path, data_set) / 255.0
+
+        # print('imshape',np.shape(img))
         images.append(img)
-        if i > 20:
+        if i >= batch_size - 1:
             break
-
-    for (i, (xyz, K)) in enumerate(zip(xyz_list, K_list)):
-        uv = projectPoints(xyz, K)
-      #  print(xyz)
-
-
-        depth.append(np.array(xyz).T[2])
+    for i in range(len(xyz_list)):
+        xy = np.array(xyz_list[i])[:, 0:-1] / s_list[i]
+        z = np.array(xyz_list[i])[:, 2] / s_list[i]
+        z_rel = z - z[0]
+        xyz = np.hstack((xy, np.expand_dims(z_rel, axis=1)))
+        # xyz = np.ndarray.flatten(xyz)
+        xyz_all.append(xyz)
+        # K_inv.append(np.array(np.linalg.inv(K_list[i])))
+        uv = projectPoints(xyz_list[i], K_list[i])
         uv = uv[:, ::-1]
+
         hm = create_gaussian_hm(uv, 224, 224, r, gaussian)
         hms.append(hm[0])
-        if i > 20:
-            break
-    yield ([images], [hms, depth])
 
+        if i >= batch_size - 1:
+            break
+    yield ([images], [xyz_all, hms])  # ,uv_all
