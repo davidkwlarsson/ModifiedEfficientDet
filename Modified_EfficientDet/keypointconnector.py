@@ -23,6 +23,68 @@ def keypoint_connections():
     return connection_dict
 
 
+class JointAngels(layers.Layer):
+
+    def __init__(self, output_dim, **kwargs):
+        super(JointAngels, self).__init__(**kwargs)
+        self.output_dim = output_dim
+        self.xaxis = list()
+        self.zaxis = list()
+        self.yaxis = list()
+        self.b = list()
+
+    def get_config(self):
+        base_config = super(JointAngels, self).get_config()
+        base_config['output_dim'] = self.output_dim
+        return base_config
+
+    def build(self, input_shape):
+        # Create a trainable weight variable for this layer.
+        self.built = True
+
+    def norm_p(self,i):
+        assert i in (1,2,3,4)
+        n = tf.linalg.normalize(tf.linalg.cross(self.b[i+1], self.b[i]))
+        return n
+
+    def angle(self, v1, v2):
+        alpha = tf.math.acos(tf.tensordot(v1,v2)/ \
+            (tf.linalg.l2_normalize(v1)*tf.linalg.l2_normalize(v2)))
+        return alpha
+
+    def ortho_project(self, x,y, v):
+        A = tf.concat([x,y], axis = -1)
+        P = tf.matmul(A, tf.linalg.matmul(
+                tf.linalg.inv(tf.tensordot(A,A)),
+                tf.linalg.matvec(A,x,transpose_a = True)))
+        # orthogonal projection of v onto vectors x and y
+        return P
+
+    def constuct_b(self, input):
+        self.b.append(input[2,:] - input[1,:])
+        self.b.append(input[6,:] - input[5,:])
+        self.b.append(input[10,:] - input[9,:])
+        self.b.append(input[14,:] - input[13,:])
+        self.b.append(input[18,:] - input[17,:])
+
+    def call(self, input):
+        # Input should be 21,3 representing the coordinates
+        self.construct_b(input)
+        for i in range(1,6):
+            self.zaxis.append(tf.linalg.normalize(self.b[i]))
+            if i in (1,2):
+                self.xaxis.append(-norm_p(i))
+            if i in (3,4):
+                self.xaxis.append(-tf.linalg.normalize(norm_p(i)-norm_p(i-1)))
+            if i == 5:
+                self.xaxis.append(-norm_p(4))
+            self.yaxis.append(tf.norm(tf.linalg.cross(self.zaxis[i], self.xaxis[i])))
+        return 0
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], self.output_dim)
+
+
 
 class ConnectKeypointLayer(layers.Layer):
 
@@ -79,3 +141,120 @@ class ConnectKeypointLayer(layers.Layer):
 
     def compute_output_shape(self, input_shape):
         return (input_shape[0], self.output_dim)
+
+
+
+# class Softargmax(layers.layer):
+#     def __init__(self):
+#         super().__init__()
+
+def softargmax(x, beta=1e10):
+  x = tf.convert_to_tensor(x)
+  x_range = tf.range(x.shape.as_list()[-1], dtype=x.dtype)
+  return tf.reduce_sum(tf.nn.softmax(x*beta) * x_range, axis=-1)
+
+import numpy as np
+class Spatial_softargmax(layers.Layer):
+
+    def __init__(self, heigth,width,channels, **kwargs):
+        super(Spatial_softargmax, self).__init__(**kwargs)
+        self.H = heigth
+        self.W = width
+        self.C = channels
+    
+    def build(self, input_shape):
+        self.image_coords = self.add_weight(name = 'image_coords',
+                                shape = (self.H, self.W,2), initializer = 'uniform',
+                                trainable = True)
+        self.build = True
+
+    def get_config(self):
+        base_config = super(Spatial_softargmax, self).get_config()
+
+    def call(self, input):
+        # Assume features is of size [N, H, W, C] (batch_size, height, width, channels)
+        # Transpose it to [N, C, H, W], then reshape to [N * C, H * W] to compute softmax
+        # jointly over the image dimensions
+        features = tf.reshape(tf.transpose(input, [0, 3, 1, 2]), [-1, self.H * self.W])
+        softmax = tf.nn.softmax(features)
+        # Reshape and transpose back to original format.
+        softmax = tf.transpose(tf.reshape(softmax, [-1, self.C, self.H, self.W]), [0, 2, 3, 1])
+        # Assume that image_coords is a tensor of size [H, W, 2] representing the image
+        # coordinates of each pixel.
+        # Convert softmax to shape [N, H, W, C, 1]
+        softmax = tf.expand_dims(softmax, -1)
+        # Convert image coords to shape [H, W, 1, 2]
+        # im_init = tf.initializers.RandomUniform(minval = 0, maxval = 1)
+        # image_coords = tf.Variable(initial_value = np.ones((self.H,self.W,2)), trainable = True, dtype = tf.float32)
+        # print(image_coords)
+        image_coords = tf.expand_dims(self.image_coords, 2)
+        # Multiply (with broadcasting) and reduce over image dimensions to get the result
+        # of shape [N, C, 2]
+        spatial_soft_argmax = tf.reduce_sum(softmax * image_coords, axis=[1, 2])
+        
+        # Flatten the images and get the argmax in flatten mode
+        # features = tf.reshape(features, [-1, heigth*width, channels])
+        # spatial_argmax = tf.argmax(features, axis = 1)
+        # print(spatial_argmax, ' number 1')
+        # # 21 tensors with the flattened argmax index
+        # new_spatial = []
+        # spatial_argmax = tf.unstack(spatial_argmax, axis = -1)
+        # for s_argmax in spatial_argmax:
+        #     new_spatial.append(tf.transpose(tf.unravel_index(s_argmax, (heigth,width))))
+        # 21 tensors with shape None,2 at this point
+        print(spatial_soft_argmax)
+        # Stack the 21 tensors at the last axis: None, 2, 21. 
+        # spatial_argmax = tf.stack(new_spatial, axis = -1)
+        # spatial_argmax = tf.cast(spatial_argmax, dtype = tf.float32)
+        return spatial_soft_argmax/224
+
+
+def spatial_soft_argmax(features,heigth,width,channels, image_coords):
+    # Assume features is of size [N, H, W, C] (batch_size, height, width, channels)
+    # Transpose it to [N, C, H, W], then reshape to [N * C, H * W] to compute softmax
+    # jointly over the image dimensions
+    H = heigth
+    W = width
+    C = channels
+    temp = 0.01
+    features = tf.reshape(tf.transpose(features, [0, 3, 1, 2]), [-1, H * W])
+    print(tf.math.argmax(features, axis = -1))
+    # print(tf.math.reduce_max(features, axis = -1))
+    softmax = tf.nn.softmax(features/temp, axis = -1)
+    # print(softmax)
+    print(tf.math.argmax(softmax, axis = -1))
+    # Reshape and transpose back to original format.
+    softmax = tf.transpose(tf.reshape(softmax, [-1, C, H, W]), [0, 2, 3, 1])
+    # Assume that image_coords is a tensor of size [H, W, 2] representing the image
+    # coordinates of each pixel.
+    # Convert softmax to shape [N, H, W, C, 1]
+    softmax = tf.expand_dims(softmax, -1)
+    # Convert image coords to shape [H, W, 1, 2]
+    # im_init = tf.initializers.RandomUniform(minval = 0, maxval = 1)
+    # image_coords = tf.Variable(initial_value = np.ones((self.H,self.W,2)), trainable = True, dtype = tf.float32)
+    # print(image_coords)
+    image_coords = tf.expand_dims(image_coords, 2)
+    image_coords = tf.expand_dims(image_coords, 0)
+    # print(softmax*image_coords)
+    # print(softmax)
+    # Multiply (with broadcasting) and reduce over image dimensions to get the result
+    # of shape [N, C, 2]
+    # print(softmax)
+    # print(image_coords)
+    spatial_soft_argmax = tf.reduce_sum(softmax * image_coords, axis=[1, 2])
+    
+    # Flatten the images and get the argmax in flatten mode
+    # features = tf.reshape(features, [-1, heigth*width, channels])
+    # spatial_argmax = tf.argmax(features, axis = 1)
+    # print(spatial_argmax, ' number 1')
+    # # 21 tensors with the flattened argmax index
+    # new_spatial = []
+    # spatial_argmax = tf.unstack(spatial_argmax, axis = -1)
+    # for s_argmax in spatial_argmax:
+    #     new_spatial.append(tf.transpose(tf.unravel_index(s_argmax, (heigth,width))))
+    # 21 tensors with shape None,2 at this point
+    # print(spatial_soft_argmax)
+    # Stack the 21 tensors at the last axis: None, 2, 21. 
+    # spatial_argmax = tf.stack(new_spatial, axis = -1)
+    # spatial_argmax = tf.cast(spatial_argmax, dtype = tf.float32)
+    return spatial_soft_argmax

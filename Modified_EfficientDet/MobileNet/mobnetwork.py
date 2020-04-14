@@ -16,6 +16,7 @@ def efficientdet_mobnet(phi,input_shape = (224,224,3), num_classes=20, weighted_
     input_size = image_sizes[phi]
     # input_shape = (input_size, input_size, 3)
     # input_shape = (224, 224, 3)
+    num_rows, num_cols = (224,224)
     input_shape = input_shape
     image_input = layers.Input(shape = input_shape)
     w_bifpn = w_bifpns[phi]
@@ -54,31 +55,50 @@ def efficientdet_mobnet(phi,input_shape = (224,224,3), num_classes=20, weighted_
     feature3 = features[0] ## OUTPUT SIZE OF 28,28,64 for freihand
     # feature2 = features[1]
     
-    feature3 = ConnectKeypointLayer(64)(feature3)
-
-    depth = layers.Flatten()(feature3)
-    depth = layers.Dropout(0.5)(depth)
-    depth = layers.Dense(21, activation = 'linear', name = 'depth')(depth)
+    feature2 = layers.UpSampling2D()(feature3) # from 28 -> 56
+    feature2_cont = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature2)
+    # feature2_cont = layers.DepthwiseConv2D(kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature2)
+    # feature2 = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'sigmoid', name = 'size3')(feature3)
+    feature1 = layers.UpSampling2D()(feature2_cont) # from 56 -> 112
     
-
-    # feature2 = layers.UpSampling2D()(feature3) # from 28 -> 56
-    # feature2_cont = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature2)
-    feature2 = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'sigmoid', name = 'normalsize')(feature3)
-    # feature1 = layers.UpSampling2D()(feature2_cont) # from 56 -> 112
-    # feature1_cont = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature1)
+    feature1_cont = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature1)
+    # feature1_cont = layers.DepthwiseConv2D(kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature1)
     # feature1 = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'sigmoid', name = 'size2')(feature1)
-    # feature_cont = layers.UpSampling2D()(feature1_cont) #from 112 -> 224
-    # feature = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'sigmoid', name = 'size3')(feature_cont)
+    feature_cont = layers.UpSampling2D()(feature1_cont) #from 112 -> 224
+    # feature = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'sigmoid', name = 'normalsize')(feature_cont)
+    feature = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'linear')(feature_cont)
     # depth = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'linear', name = 'depthmaps')(feature_cont)
 
     # feature = layers.Reshape((224,224))(feature)
     # feature = feature2
 
-    ### TRY WITH SOFTMAX FOR CATEGORICAL
+    # This should be of shape (Batch_size, 21, 2)
+    # Contains the uv_coords for the keyjoints based on heatmaps
+    x_pos = np.empty((num_rows, num_cols), np.float32)
+    y_pos = np.empty((num_rows, num_cols), np.float32)
 
+    # Assign values to positions
+    for i in range(num_rows):
+      for j in range(num_cols):
+        x_pos[i, j] = 2.0 * j / (num_cols - 1.0) - 1.0
+        y_pos[i, j] = 2.0 * i / (num_rows - 1.0) - 1.0
+        # x_pos[i,j] = j
+        # y_pos[i,j] = i
+
+    # x_pos = tf.reshape(x_pos, [num_rows * num_cols])
+    # y_pos = tf.reshape(y_pos, [num_rows * num_cols])
+    image_coords = tf.stack([x_pos,y_pos], axis = -1)
+    # print('image coordinates : ', image_coords)
+
+    uv_coords = spatial_soft_argmax(feature,224, 224, 21, image_coords)
+    # uv_coords = tf.compat.v1.contrib.layers.spatial_softmax(features, name = 'uv_coords')
+    uv_coords_out = layers.Layer(name = 'uv_coords')(uv_coords)
     
-    # regression = regress_head(feature3)
+    # set true if only the final part is trained
+    # if include_depth == True:
+    z_can = liftpose(uv_coords, feature3)
 
-    model = models.Model(inputs=[image_input], outputs=[feature2,depth])
+    # xyz = calc_xyz(z_can, uv_coords)
 
+    model = models.Model(inputs=[image_input], outputs=[uv_coords_out, z_can])
     return model

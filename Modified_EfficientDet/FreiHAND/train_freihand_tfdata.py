@@ -29,7 +29,7 @@ import matplotlib.pyplot as plt
 
 
 from tensorflow import keras
-# from tensorflow.keras import backend as K
+from tensorflow.keras import backend as K
 from tensorflow.keras.optimizers import Adam, SGD
 # from tensorflow.keras.preprocessing.image import ImageDataGenerator
 # from tensorflow.keras.losses import Reduction
@@ -42,10 +42,14 @@ from network import efficientdet # , efficientdet_coord
 from efficientnet import BASE_WEIGHTS_PATH, WEIGHTS_HASHES
 from FreiHAND.freihand_utils import *
 from losses import *
+
 from FreiHAND.tfdatagen_frei import tf_generator, benchmark
+
+from keypointconnector import spatial_soft_argmax
 
 
 tf.compat.v1.disable_eager_execution()
+# tf.compat.v1.enable_eager_execution()
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' 
@@ -93,10 +97,10 @@ def get_flops(model):
 
 
 def scheduler(epoch):
-        if epoch < 1:
-            return 0.001
-        else:
-            return 0.001 * tf.math.exp(0.1*(-epoch))
+  if epoch < 10:
+    return 0.001
+  else:
+    return 0.001 * tf.math.exp(0.1 * (10 - epoch))
 
 
 default_timeit_steps = 1000
@@ -187,34 +191,115 @@ def get_tfdata(dir_path):
     labeled_ds = labeled_ds.batch(16)
     return labeled_ds
 
+
+# This seems to not work as intended
+class ChangeWLcallback(tf.keras.callbacks.Callback):
+    def __init__(self, alpha, beta):
+        super(ChangeWLcallback, self).__init__()
+        self.alpha = alpha
+        self.beta = beta
+    
+    def on_epoch_begin(self, epoch, logs = None):
+        print('epoch number : ',  epoch)
+        if epoch == 8:
+            K.set_value(self.alpha, 0.0)
+            K.set_value(self.beta, 1.0)
+            for layer in self.model.layers[-13:]:
+                layer.trainable = True
+            for layer in self.model.layers[:-13]:
+                layer.trainable = False
+            print("Changed to loss for depth and train only the liftpose network")
+
 def main():
     dir_path = sys.argv[1]
     phi = 0
-    cont_training = False
+
+
+    use_saved_model = False
+    train_uv = False
+    train_z = False
+    train_full = True
+
+
+
     weighted_bifpn = True
     freeze_backbone = False
     input_shape = (224,224,3)
     tf.compat.v1.keras.backend.set_session(get_session())
-
+    print(tf.__version__)
     # images, heatmaps, heatmaps2,heatmaps3, coord = get_trainData(dir_path, 100, multi_dim=True)
     batch_size = 16
-    nbr_epochs = 1
+    nbr_epochs = 10
     num_samp = 128000
-    num_val_samp = 100
+    num_val_samp = 1000
     train_dataset = tf_generator(dir_path, batch_size=batch_size, num_samp=num_samp, data_set = 'training')
     valid_dataset = tf_generator(dir_path, batch_size=batch_size, num_samp=num_val_samp, data_set = 'validation')
     traingen = train_dataset.prefetch(batch_size)
     validgen = valid_dataset.prefetch(batch_size)
+    print(traingen)
+    # num_rows, num_cols = (224,224)
+    # x_pos = np.empty((num_rows, num_cols), np.float32)
+    # y_pos = np.empty((num_rows, num_cols), np.float32)
 
+    # # Assign values to positions
+    # for i in range(num_rows):
+    #   for j in range(num_cols):
+    #     x_pos[i, j] = 2.0 * j / (num_cols - 1.0) - 1.0
+    #     y_pos[i, j] = 2.0 * i / (num_rows - 1.0) - 1.0
+    # print(x_pos)
+    # print(y_pos)
+    # # x_pos = tf.reshape(x_pos, [num_rows * num_cols])
+    # # y_pos = tf.reshape(y_pos, [num_rows * num_cols])
+    # image_coords = tf.stack([x_pos,y_pos], axis = -1)
+    # sum_scatter_hand = True
+    # if sum_scatter_hand:
+    #     for sample in traingen:
+            
+    #         print(sample[1])
+    #         b_target = sample[1]
+    #         # for i in range(21):
+    #         #    print(np.array(sample[1][0][i])*224)
+    #         print((spatial_soft_argmax(b_target, 224,224,21, image_coords)[0] + 1)*112)
+
+    #         break
+    
     # check if it looks good
     # plot_heatmaps_with_coords(images, heatmaps, coord)
 
+    checkpoint = tf.keras.callbacks.ModelCheckpoint(
+            filepath='mymodel3.h5',
+            # Path where to save the model
+            # The two parameters below mean that we will overwrite
+            # the current checkpoint if and only if
+            # the `val_loss` score has improved.
+            save_best_only = True,
+            save_weights_only= True,
+            monitor='val_loss',
+            verbose=1)
+
+
+    callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
+
+    earlystop = tf.keras.callbacks.EarlyStopping(
+        monitor='val_loss', min_delta=0, patience=5, verbose=0, mode='auto',
+        baseline=None, restore_best_weights=True)
+
+    lr_plateau = tf.keras.callbacks.ReduceLROnPlateau(
+        monitor='val_loss', factor=0.1, patience=3, verbose=0, mode='auto',
+        min_delta=0.0001, cooldown=0, min_lr=0)
+
     # print("Number of images: %s and heatmaps: %s\n" % (len(images), len(heatmaps)))
-    model = efficientdet(phi, input_shape = input_shape,weighted_bifpn=weighted_bifpn,
-                         freeze_bn=freeze_backbone)
+    model = efficientdet(phi, input_shape = input_shape,
+                        include_depth= False,
+                        weighted_bifpn=weighted_bifpn,
+                        freeze_bn=freeze_backbone)
     # model = efficientdet_coord(phi, weighted_bifpn=weighted_bifpn,
     #                       freeze_bn = freeze_backbone)
 
+    if use_saved_model:
+        model.load_weights('model.h5' , by_name = True)
+
+    
     # freeze backbone layers
     if freeze_backbone:
         # 227, 329, 329, 374, 464, 566, 656
@@ -224,48 +309,52 @@ def main():
     # compile model
     print("Compiling model ... \n")
     # losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce}
-    losses = {"normalsize" : weighted_bce, 'depth' : 'mean_squared_error'}
+    losses = {"uv_coords" : 'mean_squared_error', 'uv_depth' : 'mean_squared_error' } #, 'xyz_loss' : 'mean_squared_error'}
     # # losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce, 'depthmaps' : 'mean_squared_error'}
     # lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0}
-    lossWeights = {"normalsize" : 1.0, 'depth' : 1.0}
     # lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0, 'depthmaps' : 1.0}
     # focalloss = SigmoidFocalCrossEntropy(reduction=Reduction.SUM_OVER_BATCH_SIZE)
-    model.compile(optimizer = Adam(lr=1e-3),
-                    loss = losses, loss_weights = lossWeights,
-                    metrics = {'normalsize' : 'mse'})
-    # model.compile(optimizer='adam', metrics=['accuracy'], loss=weighted_bce)
-    # loss=tf.keras.losses.SigmoidFocalCrossEntropy())
-    # loss=weighted_bce)
-    # loss=tf.keras.losses.SigmoidFocalCrossEntropy())
-    # loss=[focal_loss(gamma = 2, alpha = 0.25)])
-    # loss = 'mean_absolute_error'
-    # print(model.summary())
-    print("Number of parameters in the model : " ,model.count_params())
-    # print(get_flops(model))
-
-    # model.fit(images, {"normalsize" : heatmaps, "size2": heatmaps2, 'size3': heatmaps3},
-    #                             batch_size=16, epochs=100, verbose=1)
-    # K.set_value(model.optimizer.learning_rate, 1e-5)
-    # model.fit(images, heatmaps, batch_size = 16, epochs = 100, verbose = 1)
-
-    # callbacks = [
-    # keras.callbacks.ModelCheckpoint(
-    #     filepath='mymodel_{epoch}',
-    #     # Path where to save the model
-    #     # The two parameters below mean that we will overwrite
-    #     # the current checkpoint if and only if
-    #     # the `val_loss` score has improved.
-    #     save_best_only=True,
-    #     monitor='val_loss',
-    #     verbose=1)
-    #     ]
+    if train_full:
+        lossWeights = {"uv_coords" : 1.0, 'uv_depth' : 1.0} #, "xyz_loss" : 0.0}
+        model.compile(optimizer = Adam(lr=1e-3),
+                        loss = losses, loss_weights = lossWeights,
+                        )
+        callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
+        print("Number of parameters in the model : " ,model.count_params())
+        print(model.summary())
+        history = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
+                        ,steps_per_epoch = num_samp//batch_size, epochs = 50, verbose=1, callbacks = [checkpoint, callback])
 
 
-    callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
 
-    history = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
-                    ,steps_per_epoch = num_samp//batch_size, epochs = nbr_epochs, verbose=1, callbacks=[callback])
-    # model.save_weights('handposenet')
+    if train_uv:
+        print('train uv')
+        # Freeze the liftpose layers
+        alpha = 1.0 # tf.keras.backend.variable(1.0)
+        beta = 0.0   # tf.keras.backend.variable(1.0)
+        lossWeights = {"uv_coords" : alpha, 'uv_depth' : beta} #, "xyz_loss" : 0.0}
+        for layer in model.layers[-13:]:
+            layer.trainable = False
+
+        model.compile(optimizer = Adam(lr=1e-3),
+                        loss = losses, loss_weights = lossWeights,
+                        )
+        # loss=[focal_loss(gamma = 2, alpha = 0.25)])
+        # print(model.summary())
+        # print(get_flops(model))
+
+        print("Number of parameters in the model : " ,model.count_params())
+        # model.fit(images, {"normalsize" : heatmaps, "size2": heatmaps2, 'size3': heatmaps3},
+        #                             batch_size=16, epochs=100, verbose=1)
+        
+
+
+        # WL_change = ChangeWLcallback(alpha, beta)
+
+        # callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
+
+        history = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
+                        ,steps_per_epoch = num_samp//batch_size, epochs = 20, verbose=1, callbacks=[checkpoint, earlystop, lr_plateau])
 
     # layer = model.get_layer('connect_keypoint_layer')
     # weights = layer.get_weights()
@@ -274,45 +363,68 @@ def main():
     #         print(weight, "with the value = ", values)
     # print(layer[-1]) 
 
-    # images = get_evalImages(dir_path, 10)
-    validgen2 = dataGenerator(dir_path, batch_size= 10, data_set = 'validation')
-    (images, targets) = next(validgen2)
+    if train_z:
+        for layer in model.layers[:-13]:
+            layer.trainable = False
+        for layer in model.layers[-13:]:
+            layer.trainable = True
 
-    # (preds, preds2 ,preds3, depth_pred) = model.predict(images)
-    preds, depth_pred = model.predict(images)
-    # (preds) = model.predict(images)
-    
-    # (heatmaps, heatmaps2, heatmaps3, depth) = targets
-    heatmaps, depth = targets
+        lossWeights = {"uv_coords" : 0.0, 'uv_depth' : 1.0}
+        model.compile(optimizer = Adam(lr=1e-3),
+                        loss = losses, loss_weights = lossWeights,
+                        )
 
-    # preds = np.squeeze(preds)
-    # heatmaps = np.squeeze(heatmaps)
-    # (preds, preds2 ,preds3) = targets
+        
+        print("Number of parameters in the model : " ,model.count_params())
+        history2 = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
+                        ,steps_per_epoch = num_samp//batch_size, epochs = 5, verbose=1, callbacks = [earlystop, lr_plateau])
+
+
+    save_model(model)
+
+    validgen2 = dataGenerator(dir_path, batch_size= 16, data_set = 'validation')
+    images, targets = next(validgen2)
+
+
+    preds, xyz_pred = model.predict(images, verbose = 1)
+    preds = np.array(preds[:10])
+    xyz_pred = np.array(xyz_pred[:10])
+
+
+    uv_target, depth_target = targets
+    coord = np.array(uv_target[:10])
+    coord = np.reshape(coord, (10,42))
+    depth_target = np.array(depth_target[:10])
+
+    # print(np.shape(xyz_pred))
+    print(np.shape(coord), np.shape(preds))
+
     
     try:
         plot_acc_loss(history)
     except:
         print('could not plot loss')
 
-    
     # get coordinates from predictions
-    coord_preds = heatmaps_to_coord(preds)
-    coord = heatmaps_to_coord(heatmaps)
-    # coord_upsamp = heatmaps_to_coord(preds2)
+    # coord_preds = heatmaps_to_coord(preds)
+    coord_preds = np.reshape((np.array(preds)+1)*112, (10,42))
+    print('predicted : ', coord_preds[0])
+    print('target : ', coord[0])
+    # coord = heatmaps_to_coord(heatmaps)
 
-    plot_predicted_heatmaps(preds, heatmaps, images)
-    # plot_predicted_heatmaps(preds2, heatmaps2)
-    plot_predicted_hands_uv(images, coord_preds*8)
+    plot_predicted_hands_uv(images, coord_preds)
 
 
     K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-560:]
     K_list = K_list[:len(preds)]
-    xyz_pred = add_depth_to_coords(coord_preds*8, depth_pred, K_list)
+    s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[-560:]
+    s_list = s_list[:len(preds)]
+    xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-560:]
+    xyz_pred = add_relative(xyz_pred, xyz_list, s_list)
+    # xyz_pred = add_depth_to_coords(coord_preds, z_pred, K_list, s_list)
+    xyz_pred = np.reshape(xyz_pred, (-1, 63))
     save_coords(xyz_pred, images[0])
-    # draw_3d_skeleton(xyz_pred, (224*2,224*2))
-    plot_predicted_coordinates(images, coord_preds*8, coord*8)
-    # plot_predicted_coordinates(images, coord_upsamp*2, coord)
-    save_model(model)
+    plot_predicted_coordinates(images, coord_preds, coord)
 
 
 

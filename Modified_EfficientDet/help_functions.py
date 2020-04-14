@@ -213,7 +213,7 @@ def get_depth(xyz_list):
     depth = np.zeros(21)
     xyz = np.array(xyz_list)
     for j in range(21):
-        depth[j] = xyz[j, 2]
+        depth[j] = xyz[j, 2] #- xyz[0,2]
     return depth
 
 
@@ -252,6 +252,7 @@ def plot_predicted_heatmaps(preds, heatmaps, images):
 
 
 def plot_predicted_coordinates(images, coord_preds, coord):
+    
     try:
         fig = plt.figure(figsize=(8, 8))
         columns = 5
@@ -262,7 +263,9 @@ def plot_predicted_coordinates(images, coord_preds, coord):
             # need to project onto image..
             plt.scatter(coord[i - 1][0::2], coord[i - 1][1::2], marker='o', s=2)
             plt.scatter(coord_preds[i - 1][0::2], coord_preds[i - 1][1::2], marker='x', s=2)
-        
+            # plt.scatter(coord[i - 1], marker='o', s=2)
+            # plt.scatter(coord_preds[i - 1], marker='x', s=2)
+            
         plt.savefig('scatter.png')
         plt.show()
     except:
@@ -295,19 +298,34 @@ def plot_predicted_hands_uv(images, coord_preds):
         plt.imshow(images[i - 1])
         # need to project onto image..
         one_pred = [coord_preds[i-1][0::2], coord_preds[i-1][1::2]]
-        
+        # one_pred = np.transpose(coord_preds[i-1])
         plot_hand(ax, np.transpose(np.array(one_pred)), order = 'uv')
         
     plt.savefig('hands_uv.png')
     plt.show()
 
+def add_relative(xyz_pred, xyz_list, s_list):
+    xyz_pred = np.reshape(xyz_pred, (-1,21,3))
+    print(len(xyz_pred))
+    xyz_new = []
+    for i in range(len(xyz_pred)):
 
-def add_depth_to_coords(coords, depth, K_list):
+        xy = np.array(xyz_pred[i])[:, 0:-1]*s_list[i]
+        z_pred = np.array(xyz_pred[i])[:,2]*s_list[i]
+        z_tar = np.array(xyz_list[i])[:,2]
+        z_pred = z_pred + z_tar[0]
+        xyz = np.concatenate((xy, np.expand_dims(z_pred, axis=-1)),axis = -1)
+        xyz = np.ndarray.flatten(xyz)
+        xyz_new.append(xyz)
+    return xyz_new
+
+def add_depth_to_coords(coords, depth, K_list, s_list):
     xyz = []
     ## Transform the x,y coordinates back to 3D using the intrinsic camera parameters, K
     
     for i in range(len(coords)):
         K = np.array(K_list[i])
+        depth[i] = depth[i]*s_list[i]
         x_coords = coords[i][0::2]*depth[i]
         y_coords = coords[i][1::2]*depth[i]
         uv_z = np.array([x_coords, y_coords, depth[i]])
@@ -317,7 +335,14 @@ def add_depth_to_coords(coords, depth, K_list):
     return xyz
 
 
-
+def change_format_coords(coords):
+    xyz = []
+    for i in range(len(coords)):
+        x_coords = coords[i][0::3]
+        y_coords = coords[i][1::3]
+        z_coords = coords[i][2::3]
+        xyz.append(np.array([x_coords, y_coords, z_coords]))
+    return xyz
 
 ### FOLLOWING CODE IS TAKEN FROM https://github.com/3d-hand-shape/hand-graph-cnn/blob/master/hand_shape_pose/util/vis.py
 
@@ -377,24 +402,31 @@ def draw_3d_skeleton(pose_cam_xyz, image_size):
 
 def save_coords(pose_cam_coord, image):
     pose_cam_coord = np.array(pose_cam_coord)
-    l,n,m = pose_cam_coord.shape
-    pose_cam_coord = pose_cam_coord.reshape((l*n, m))
-    if pose_cam_coord.shape[-1] == 3:
+    # l,n,m = pose_cam_coord.shape
+    # pose_cam_coord = pose_cam_coord.reshape((l*n, m))
+    if pose_cam_coord.shape[-1] == 3*21:
         savetxt('pose_cam_xyz.csv',pose_cam_coord, delimiter=',')
         pickle.dump(image, open('hand_for_3d.fig.pickle', 'wb'))
-    elif pose_cam_coord.shape[-1] == 2:
+    elif pose_cam_coord.shape[-1] == 2*21:
         savetxt('pose_cam_xy.csv',pose_cam_coord, delimiter=',')
         pickle.dump(image, open('hand_for_2d.fig.pickle', 'wb'))
+    else:
+        print("No coordinates saved!")
 
 
 
 
-def save_model(model):
-    model_json = model.to_json()
-    with open('model.json', 'w') as json_file:
-        json_file.write(model_json)
-    model.save_weights('model.h5')
-    print('Saved model to Disk! ')
+def save_model(model, mob_net = False):
+    model_json = model.to_json()    
+    if mob_net:
+        with open('mobnet.json', 'w') as json_file:
+            json_file.write(model_json)
+        model.save_weights('mobnet.h5')
+    else:
+        with open('model.json', 'w') as json_file:
+            json_file.write(model_json)
+        model.save_weights('model.h5')
+        print('Saved model to Disk! ')
 
 from tensorflow.keras.models import model_from_json
 from keypointconnector import ConnectKeypointLayer

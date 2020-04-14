@@ -54,11 +54,11 @@ def dataGenerator(dir_path, batch_size = 16, data_set = 'training', shuffle = Tr
             uv = projectPoints(xyz_list[idx], K_list[idx])
             # depthmaps = get_depthmaps(uv, xyz_list[idx])
             try:
-                onehots = create_onehot(uv, 28,28)
-                depth = get_depth(xyz_list[idx])
+                # onehots = create_onehot(uv, 28,28)
+                rel_depth = get_depth(xyz_list[idx])
                 batch_x.append(img)
-                batch_y[0].append(onehots)
-                batch_y[1].append(depth)
+                batch_y[0].append(uv)
+                batch_y[1].append(rel_depth)
                 nbr_samp +=1
                 
             except:
@@ -77,3 +77,27 @@ def dataGenerator(dir_path, batch_size = 16, data_set = 'training', shuffle = Tr
         i += batch_size
 
         yield (np.array(batch_x), batch_y)
+
+
+def get_focal_pp(K):
+    """ Extract the camera parameters that are relevant for an orthographic assumption. """
+    focal = 0.5 * (K[0, 0] + K[1, 1])
+    pp = K[:2, 2]
+    return focal, pp
+
+
+def backproject_ortho(uv, scale,  # kind of the predictions
+                      focal, pp):  # kind of the camera calibration
+    """ Calculate 3D coordinates from 2D coordinates and the camera parameters. """
+    uv = uv.copy()
+    uv -= pp
+    xyz = np.concatenate([np.reshape(uv, [-1, 2]),
+                          np.ones_like(uv[:, :1])*focal], 1)
+    xyz /= scale
+    return xyz
+
+def recover_root(uv_root, scale,
+                 focal, pp):
+    uv_root = np.reshape(uv_root, [1, 2])
+    xyz_root = backproject_ortho(uv_root, scale, focal, pp)
+    return xyz_root
