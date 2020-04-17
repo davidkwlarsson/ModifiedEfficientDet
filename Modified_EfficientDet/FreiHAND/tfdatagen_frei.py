@@ -248,6 +248,13 @@ def benchmark(dataset, num_epochs=2):
     return r
 
 
+def augment(image,label):
+    image = tf.image.random_contrast(image, 0.8, 2.0) # Random crop back to 28x28
+    image = tf.image.random_brightness(image, max_delta=0.3) # Random brightness
+    image = tf.image.random_saturation(image, 0.8, 2.0)
+    return image,label
+
+
 def tf_generator(dir_path, batch_size=8, num_samp = 100, data_set = 'training'):
     """ Create generator, right now seperate one for
         heatmaps and one to read images"""
@@ -259,5 +266,7 @@ def tf_generator(dir_path, batch_size=8, num_samp = 100, data_set = 'training'):
     # dataset_hm = dataset_uv.map(map_uv_to_hm, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     dataset_im = create_image_dataset(dir_path, num_samp, data_set)
     dataset = tf.data.Dataset.zip((dataset_im, dataset_uv))
+    if data_set == "training":
+        dataset = dataset.map(augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     batched_dataset = dataset.repeat().batch(batch_size)
     return batched_dataset
