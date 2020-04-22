@@ -104,13 +104,16 @@ def main():
     cont_training = False
     weighted_bifpn = True
     freeze_backbone = False
-    train_full = True
+    train_full = False
+    train_uv = True
+    train_z = True
+    use_saved_model = False
     input_shape = (224,224,3)
     tf.compat.v1.keras.backend.set_session(get_session())
 
     # images, heatmaps, heatmaps2,heatmaps3, coord = get_trainData(dir_path, 100, multi_dim=True)
     num_samp = 128000
-    num_val_samp = 642
+    num_val_samp = 2240
     batch_size = 16
     train_dataset = tf_generator(dir_path, batch_size=batch_size, num_samp=num_samp, data_set = 'training')
     valid_dataset = tf_generator(dir_path, batch_size=batch_size, num_samp=num_val_samp, data_set = 'validation')
@@ -119,16 +122,38 @@ def main():
     print(traingen)
 
 
+    checkpoint = tf.keras.callbacks.ModelCheckpoint(
+            filepath='mobnet_check.h5',
+            # Path where to save the model
+            # The two parameters below mean that we will overwrite
+            # the current checkpoint if and only if
+            # the `val_loss` score has improved.
+            save_best_only = True,
+            save_weights_only= True,
+            monitor='val_loss',
+            verbose=1)
+
+
+    # callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
+
+    earlystop = tf.keras.callbacks.EarlyStopping(
+        monitor='val_loss', min_delta=0, patience=5, verbose=0, mode='auto',
+        baseline=None, restore_best_weights=True)
+
+    lr_plateau = tf.keras.callbacks.ReduceLROnPlateau(
+        monitor='val_loss', factor=0.1, patience=3, verbose=0, mode='auto',
+        min_delta=0.0001, cooldown=0, min_lr=0)
     # print("Number of images: %s and heatmaps: %s\n" % (len(images), len(heatmaps)))
     model = efficientdet_mobnet(phi, input_shape = input_shape,weighted_bifpn=weighted_bifpn,
                          freeze_bn=freeze_backbone)
 
+    if use_saved_model:
+        model.load_weights('mobnet.h5' , by_name = True)
 
-    # compile model
-    losses = {"uv_coords" : 'mean_squared_error', 'uv_depth' : 'mean_squared_error' } #, 'xyz_loss' : 'mean_squared_error'}
+    losses = {"uv_coords" : 'mean_squared_error', 'xyz_loss' : 'mean_squared_error' } #, 'xyz_loss' : 'mean_squared_error'}
 
     if train_full:
-        lossWeights = {"uv_coords" : 1.0, 'uv_depth' : 1.0} #, "xyz_loss" : 0.0}
+        lossWeights = {"uv_coords" : 1.0, 'xyz_loss' : 1.0} #, "xyz_loss" : 0.0}
         model.compile(optimizer = Adam(lr=1e-3),
                         loss = losses, loss_weights = lossWeights,
                         )
@@ -136,16 +161,49 @@ def main():
         print("Number of parameters in the model : " ,model.count_params())
         print(model.summary())
         history = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
-                        ,steps_per_epoch = num_samp//batch_size, epochs = 50, verbose=1, callbacks = [checkpoint, callback])
+                        ,steps_per_epoch = num_samp//batch_size, epochs = 1, verbose=1, callbacks = [checkpoint, callback])
 
 
-    callback = tf.keras.callbacks.LearningRateScheduler(scheduler, verbose = 1)
+    if train_uv:
+        print('train uv')
+        # Freeze the liftpose layers
+        alpha = 1.0 # tf.keras.backend.variable(1.0)
+        beta = 0.0   # tf.keras.backend.variable(1.0)
+        lossWeights = {"uv_coords" : alpha, 'xyz_loss' : beta} #, "xyz_loss" : 0.0}
+        for layer in model.layers[-16:]:
+            layer.trainable = False
 
-    history = model.fit(traingen,  validation_data = validgen, validation_steps = 18
-                    ,steps_per_epoch = 8000, epochs = 15, verbose = 1, callbacks = [callback])
+        model.compile(optimizer = Adam(lr=1e-3),
+                        loss = losses, loss_weights = lossWeights,
+                        )
+        print("Number of parameters in the model : " ,model.count_params())
+
+        history_uv = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
+                        ,steps_per_epoch = num_samp//batch_size, epochs = 30, verbose=1, callbacks=[checkpoint, earlystop, lr_plateau])
+
+    if train_z:
+        for layer in model.layers[:-16]:
+            layer.trainable = False
+        for layer in model.layers[-16:]:
+            layer.trainable = True
+
+        lossWeights = {"uv_coords" : 0.0, 'xyz_loss' : 1.0}
+        model.compile(optimizer = Adam(lr=1e-3),
+                        loss = losses, loss_weights = lossWeights,
+                        )
+
+        
+        print("Number of parameters in the model : " ,model.count_params())
+        history_xyz = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
+                        ,steps_per_epoch = num_samp//batch_size, epochs = 5, verbose=1, callbacks = [earlystop, lr_plateau])
+
 
     
-    save_model(model, mob_net = True)
+    # save_model(model, mob_net = True)
+    for layer in model.layers:
+            layer.trainable = True
+    model.save_weights('mobnet.h5')
+    model.save("saved_mobnet/my_model")
 
     validgen2 = dataGenerator(dir_path, batch_size= 16, data_set = 'validation')
     images, targets = next(validgen2)
@@ -166,7 +224,12 @@ def main():
 
     
     try:
-        plot_acc_loss(history)
+        if train_uv:
+            plot_acc_loss(history_uv, uv_only = True)
+        if train_z:
+            plot_acc_loss(history_xyz, xyz_only = True)
+        if train_full:
+            plot_acc_loss(history)
     except:
         print('could not plot loss')
 
