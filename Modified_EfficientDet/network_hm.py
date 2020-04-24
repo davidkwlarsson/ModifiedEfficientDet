@@ -308,10 +308,10 @@ def efficientdet(phi,batch_size, num_classes=20, weighted_bifpn=False, freeze_bn
     feat = layers.MaxPooling2D(pool_size=(2, 2),strides=(2, 2))(feature3)
     feat = layers.Conv2D(8, kernel_size = 1, strides = 1, padding = "same", activation = 'relu')(feat)
     feat = layers.Flatten()(feat)
-   # hm_small = layers.MaxPooling2D(strides=(2,2))(hm)
-   # hm_small = layers.Flatten()(hm_small)
-   # in_pose = layers.Concatenate()([feat, hm_small])
-    in_pose = feat
+    hm_small = layers.MaxPooling2D(strides=(2,2))(hm)
+    hm_small = layers.Flatten()(hm_small)
+    in_pose = layers.Concatenate()([feat, hm_small])
+    #in_pose = feat
     xyz = liftpose(in_pose, output_shape)
     print(np.shape(xyz))
     model = models.Model(inputs=[image_input], outputs=[xyz, hm])
