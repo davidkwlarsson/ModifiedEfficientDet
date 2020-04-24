@@ -58,6 +58,13 @@ def tf_render_heatmap(coord, input_shape, output_shape, num_keypoints, gaussian)
     return heatmap
 
 
+def augment(image,label):
+    image = tf.image.random_contrast(image, 0.8, 2.0) # Random crop back to 28x28
+    image = tf.image.random_brightness(image, max_delta=0.3) # Random brightness
+    image = tf.image.random_saturation(image, 0.8, 2.0)
+    return image,label
+
+
 def render_gaussian_heatmap(output_shape, sigma):
     x = [i for i in range(output_shape[1])]
     y = [i for i in range(output_shape[0])]
@@ -171,8 +178,12 @@ def tf_generator_hm(dir_path, dataset,  batch_size=3, num_samp = 3):
         args=[num_samples, xyz_list, K_list, s_list])
     dataset_label = dataset_label.map(map_uv_to_hm, num_parallel_calls=tf.data.experimental.AUTOTUNE)
     dataset_im = create_image_dataset(dir_path, num_samp, dataset)
-    dataset = tf.data.Dataset.zip((dataset_im, dataset_label))
-    batched_dataset = dataset.repeat().batch(batch_size)
+    dataset_out = tf.data.Dataset.zip((dataset_im, dataset_label))
+    if dataset == "training":
+        dataset_out = dataset_out.map(augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        dataset_out = dataset_out.shuffle(num_samples, reshuffle_each_iteration=True)
+
+    batched_dataset = dataset_out.repeat().batch(batch_size)
     return batched_dataset
 
 if __name__ == '__main__':

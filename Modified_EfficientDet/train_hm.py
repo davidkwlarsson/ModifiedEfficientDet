@@ -162,10 +162,12 @@ def main():
    # validgen = testthisoneGenerator(imgs, hms, batch_size= 16)
     if dataset == 'small_dataset':
         num_samp = 400
+    elif dataset == 'test':
+        num_samp = 2
     else:
         num_samp = 128000
     batch_size = 8
-    num_val_samp = 560
+    num_val_samp = 2240
     #train_dataset = tf_generator(dir_path, 'training', batch_size=batch_size, num_samp=num_samp)
 
     traingen = tf_generator_hm(dir_path, dataset, batch_size=batch_size, num_samp=num_samp)
@@ -183,79 +185,110 @@ def main():
     depth = False
     only_depth = True
     name= "normalsize"
-    losses = {"xyz": 'mean_squared_error', name: weighted_bce}#, "depth": 'mean_squared_error'}
+    losses = {"xyz":'mse', name: weighted_bce}#, "depth": 'mean_squared_error'}
+   # losses = {"xyz": mse_bone_length_loss(batch_size), name: weighted_bce}#, "depth": 'mean_squared_error'}
     lossWeights = {"xyz": 1, name: 1}
     model = efficientdet(phi, batch_size, weighted_bifpn=weighted_bifpn,
                          freeze_bn=freeze_backbone)
-    # freeze backbone layers
+    # freeze backbone layers FALSE NOW
     if freeze_backbone:
-      #   227, 329, 329, 374, 464, 566, 656
         for i in range(1, [227, 329, 329, 374, 464, 566, 656][phi]):
             model.layers[i].trainable = False
 
-    model.load_weights('model.h5', by_name=True)
-    # Freeze the hm layers
-   # for layer in model.layers[:-13]:
-   #     layer.trainable = False
+    model.load_weights('model1.h5', by_name=True)
+   # model.load_weights('my_model_3.h5', by_name=True)
+    #Freeze the hm layers
+    #for layer in model.layers[:-17]:
+       #layer.trainable = False
     # compile model
     print("Compiling model ... \n")
     model.compile(optimizer=Adam(lr=1e-3), loss=losses, loss_weights=lossWeights)
     print("Number of parameters in the model : ", model.count_params())
-    #print(model.summary())
+    print(model.summary())
     print(traingen)
     print(validgen)
+    train = True
+    if train:
+        lr_plateau = tf.keras.callbacks.ReduceLROnPlateau(
+            monitor='val_loss', factor=0.1, patience=3, verbose=0, mode='auto',
+            min_delta=0.0001, cooldown=0, min_lr=0.00001)
+        callbacks = [tf.keras.callbacks.ModelCheckpoint(
+            filepath='my_model_3.h5',
+            # Path where to save the model
+            # The two parameters below muv_predsean that we will overwrite
+            # the current checkpoint if and only if
+            # the `val_loss` score has improved.
+            save_weights_only=True,
+            save_best_only=True,
+            monitor='val_loss',
+            verbose=1),
+           # tf.keras.callbacks.LearningRateScheduler(scheduler)
+            lr_plateau
+            ]
 
-    callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
-    history = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
-                    ,steps_per_epoch = num_samp//batch_size, epochs = nbr_epochs, verbose=1, callbacks=[callback])
-    plot_acc_loss(history)
+        history = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
+                        ,steps_per_epoch = num_samp//batch_size, epochs = nbr_epochs, verbose=1, callbacks=callbacks)
+        plot_acc_loss(history)
+        model.save('saved_model/my_model')
+        model.save_weights("model_latest.h5")
+    do_validation = True
+    if do_validation:
+        validgen2 = dataGenerator_hm(dir_path, batch_size=10, data_set='validation')
+        print(validgen2)
+        images = []
+        targets = []
+        for i in range(1):
+            (im, ta) = next(validgen2)
+            images.append(im[0])
+            targets.append(ta)
+            print(np.shape(ta))
+        targets = targets[0]
+        print(np.shape(images))
+        print(np.shape(targets))
+       # model.save_weights('weights_hm_xyz_2.h5')
 
-    validgen2 = dataGenerator_hm(dir_path, batch_size=10, data_set='validation')
-    print(validgen2)
-    (images, targets) = next(validgen2)
-    print(np.shape(images))
+        preds = model.predict(images)
 
-    preds = model.predict(images)
-    depth = True
-    #print(np.shape(preds))
-    #print(np.shape(targets))
-    #xyz_list, K_list, num_samples = get_raw_data(dir_path, 'validation')
+        pred_xyz = shape_target(preds[0])#[0]
+        pred_hm = preds[1]
+        true_xyz = targets[0]
+        true_hm = targets[1]
+        images = images[0]
+        save_coords_one_file(pred_xyz, 'pred_')
+        save_coords_one_file(true_xyz, 'target_')
+        print('targets ', np.shape(targets[0]))
+       # print('K ', np.shape(K))
+        print('images ', np.shape(images))
+        print('pred_xyz', np.shape(pred_xyz))
+        print('true_xyz', np.shape(true_xyz))
+        print('pred_hm', np.shape(pred_hm))
+       # print('true_hm', np.shape(true_hm))
+        #uv_projs = preds[1]
+       # print(np.shape(uv_projs))
 
-    pred_xyz = shape_target(preds[0])#[0]
-    pred_hm = preds[1]
-    true_xyz = targets[0]
-    true_hm = targets[1]
-    images = images[0]
-    print('targets ', np.shape(targets[0]))
-   # print('K ', np.shape(K))
-    print('images ', np.shape(images))
-    print('pred_xyz', np.shape(pred_xyz))
-    print('true_xyz', np.shape(true_xyz))
-    print('pred_hm', np.shape(pred_hm))
-    print('true_hm', np.shape(true_hm))
-    #uv_projs = preds[1]
-   # print(np.shape(uv_projs))
+        pred_coord = heatmaps_to_coord(pred_hm)
+        save_coords_one_file([pred_coord*4], 'uv_')
+        np.savetxt('uv_preds2.csv', pred_coord, delimiter=',')
+        true_coord = heatmaps_to_coord(true_hm)
+        np.savetxt('uv_targets2.csv', true_coord, delimiter=',')
 
-    pred_coord = heatmaps_to_coord(pred_hm)
-    true_coord = heatmaps_to_coord(true_hm)
-    np.savetxt('uv_preds2.csv',pred_coord,delimiter=',')
-    np.savetxt('uv_targets2.csv',true_coord,delimiter=',')
-    plot_predicted_heatmaps(pred_hm, true_hm)
-    # Skeleton plot
-    plot_predicted_hands_uv(images, pred_coord * 4, 'uv_hands_pred.png')
-    plot_predicted_hands_uv(images, true_coord * 4, 'uv_hands.png')
-    # Scatter plot
-    plot_predicted_coordinates(images, pred_coord*4, true_coord*4)
-    plot_hm_with_images(pred_hm, true_hm, images, 0, 4)
-    plot_hm_with_images(pred_hm, true_hm, images, 1, 4)
-    plot_hm_with_images(pred_hm, true_hm, images, 2, 4)
-    plot_hm_with_images(pred_hm, true_hm, images, 3, 4)
-    plot_hm_with_images(pred_hm, true_hm, images, 4, 4)
-    for i in range(batch_size):
-        save_coords(pred_xyz[i], images[i], 'pred_' + str(i))
-        save_coords(true_xyz[i], images[i], 'target_' + str(i))
-       # tmp = np.reshape(uv_projs[i], (21,2))
-        save_coords(pred_coord*4,images[i], 'uv_' + str(i))
+        plot_predicted_heatmaps(pred_hm, true_hm)
+        # Skeleton plot
+        plot_predicted_hands_uv(images, pred_coord * 4, 'uv_hands_pred.png')
+        plot_predicted_hands_uv(images, true_coord * 4, 'uv_hands.png')
+        # Scatter plot
+        plot_predicted_coordinates(images, pred_coord*4, true_coord*4)
+        plot_hm_with_images(pred_hm, true_hm, images, 0, 4)
+        plot_hm_with_images(pred_hm, true_hm, images, 1, 4)
+        plot_hm_with_images(pred_hm, true_hm, images, 2, 4)
+        plot_hm_with_images(pred_hm, true_hm, images, 3, 4)
+        plot_hm_with_images(pred_hm, true_hm, images, 4, 4)
+
+      #  for i in range(100):
+      #      save_coords(pred_xyz[i], images[i], 'pred_' + str(i))
+      #      save_coords(true_xyz[i], images[i], 'target_' + str(i))
+      #     # tmp = np.reshape(uv_projs[i], (21,2))
+      #      save_coords(pred_coord*4,images[0], 'uv_' + str(i))
 
 
 

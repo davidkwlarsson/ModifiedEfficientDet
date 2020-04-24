@@ -28,6 +28,7 @@ def DepthwiseConvBlock(kernel_size, strides, name, freeze_bn=False):
     f1 = layers.DepthwiseConv2D(kernel_size=kernel_size, strides=strides, padding='same',
                                 use_bias=False, name='{}_dconv'.format(name))
     f2 = BatchNormalization(freeze=freeze_bn, name='{}_bn'.format(name))
+   # f2 = layers.BatchNormalization(name='{}_bn'.format(name))
     f3 = layers.ReLU(name='{}_relu'.format(name))
     return reduce(lambda f, g: lambda *args, **kwargs: g(f(*args, **kwargs)), (f1, f2, f3))
 
@@ -36,6 +37,8 @@ def ConvBlock(num_channels, kernel_size, strides, name, freeze_bn=False):
     f1 = layers.Conv2D(num_channels, kernel_size=kernel_size, strides=strides, padding='same',
                        use_bias=False, name='{}_conv'.format(name))
     f2 = BatchNormalization(freeze=freeze_bn, name='{}_bn'.format(name))
+
+    #f2 = layers.BatchNormalization(name='{}_bn'.format(name))
     f3 = layers.ReLU(name='{}_relu'.format(name))
     return reduce(lambda f, g: lambda *args, **kwargs: g(f(*args, **kwargs)), (f1, f2, f3))
 
@@ -211,19 +214,19 @@ def spatial_soft_argmax(features, heigth, width, channels, image_coords):
 def liftpose(uv_coords, output_shape):
     # Save the output layer and then pop it to remove
     uv_coords = layers.Flatten()(uv_coords)
-    print(uv_coords)
-    r0 = layers.Dense(200, activation='linear')(uv_coords)
-    print('r0 : ', r0)
+  #  print(uv_coords)
+    r0 = layers.Dense(64, activation='linear')(uv_coords)
+  #  print('r0 : ', r0)
     r1 = r0
     for i in range(2):
         ## Residual block ##
         r1 = layers.BatchNormalization()(r1)
-        r1 = layers.Dropout(0.2)(r1)
+        r1 = layers.Dropout(0.1)(r1)
         r1 = tf.keras.activations.relu(r1)
-        r1 = layers.Dense(200, activation='linear')(r1)
+        r1 = layers.Dense(64, activation='linear')(r1)
 
     added = layers.Add()([r0, r1])
-    print('added : ', added)
+   # print('added : ', added)
 
     rel_depth = layers.Dense(output_shape, activation='linear', name='xyz')(added)
     # rel_depth = layers.Reshape((21,3), name = 'uv_depth')(rel_depth)
@@ -255,7 +258,6 @@ def project_xyz(xyz):
 def efficientdet(phi,batch_size, num_classes=20, weighted_bifpn=False, freeze_bn=False, score_threshold=0.01):
     assert phi in range(7)
     input_size = image_sizes[phi]
-    print('input_size', input_size)
     # input_shape = (input_size, input_size, 3)
     input_shape_img = (224, 224, 3)
   #  input_shape_K = (3,3)
@@ -299,13 +301,17 @@ def efficientdet(phi,batch_size, num_classes=20, weighted_bifpn=False, freeze_bn
     hm = layers.Conv2D(21, kernel_size = 1, strides = 1, padding = "same", activation = 'sigmoid', name = 'normalsize')(feature2)
    # feature2 = layers.UpSampling2D()(feature2) # from 56 -> 112
    # feature2 = layers.UpSampling2D()(feature2) # from 112 -> 224
-    hm_small = layers.MaxPooling2D(strides=(2,2))(hm)
+
 
     output_shape = 21*3
-    feat = layers.MaxPooling2D(strides=(2, 2))(feature3)
+
+    feat = layers.MaxPooling2D(pool_size=(2, 2),strides=(2, 2))(feature3)
+    feat = layers.Conv2D(8, kernel_size = 1, strides = 1, padding = "same", activation = 'relu')(feat)
     feat = layers.Flatten()(feat)
-    hm_small = layers.Flatten()(hm_small)
-    in_pose = layers.Concatenate()([feat, hm_small])
+   # hm_small = layers.MaxPooling2D(strides=(2,2))(hm)
+   # hm_small = layers.Flatten()(hm_small)
+   # in_pose = layers.Concatenate()([feat, hm_small])
+    in_pose = feat
     xyz = liftpose(in_pose, output_shape)
     print(np.shape(xyz))
     model = models.Model(inputs=[image_input], outputs=[xyz, hm])
