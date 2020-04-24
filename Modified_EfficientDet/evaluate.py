@@ -175,19 +175,30 @@ def main(gt_path, pred_path, output_dir, pred_file_name=None, set_name=None):
         dir_path = sys.argv[2]
     except:
         print('no output_folder')
-    file_path ='pose_cam_xyz_pred_.csv'
+    path = '/Users/Sofie/exjobb/ModifiedEfficientDet/whole_pipeline/im-xyz/50e_fewer_weights/'
+    file_path =path+'pose_cam_xyz_pred_.csv'
+    test_z_root = True
+    if test_z_root:
+        file_path ='xyz_preds_after.csv'
 
-    #file_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/whole_pipeline/im-xyz/50e/' + file_path
 
     dir_path2 = "/Users/Sofie/exjobb/freihand/FreiHAND_pub_v2/"  #
     s_list = json_load(os.path.join(dir_path2, 'training_scale.json'))[-560:]
     pred = np.loadtxt(file_path, delimiter=',')
-    xyz_list = np.loadtxt('pose_cam_xyz_target_.csv', delimiter=',')
+    xyz_list = np.loadtxt(path+'pose_cam_xyz_target_.csv', delimiter=',')
+    xy_list = np.loadtxt(path+'uv_targets2.csv', delimiter=',').reshape(-1,21,2)*4
+    xy_pred = np.loadtxt(path+'uv_preds2.csv', delimiter=',').reshape(-1, 21, 2)*4
+
+    if test_z_root:
+        xy_pred = np.loadtxt('uv_preds_after.csv', delimiter=',').reshape(-1,21,2)
+        xyz_list = np.loadtxt('xyz_target_after.csv', delimiter=',')
+
+    print(xy_pred.shape)
     # load eval annotations
     #xyz_list = json_load(os.path.join(gt_path, '%s_xyz.json' % set_name))
     n = int(len(pred)/21)
-    pred = np.array(pred).reshape(n, 21, 3)
-    xyz_list = np.array(xyz_list).reshape(n, 21,3)
+    pred = np.array(pred).reshape(-1, 21, 3)
+    xyz_list = np.array(xyz_list).reshape(-1, 21,3)
     for i in range(xyz_list.shape[0]):
         pred[i] = pred[i] * s_list[i]
         xyz_list[i] = xyz_list[i] * s_list[i]
@@ -195,6 +206,7 @@ def main(gt_path, pred_path, output_dir, pred_file_name=None, set_name=None):
     print(np.shape(pred))
     #assert len(pred) == 2, 'Expected format mismatch.'
     assert len(pred) == len(xyz_list), 'Expected format mismatch.'
+    assert len(xy_pred) == len(xy_list), 'Expected format mismatch.'
     #assert len(pred[1]) == len(xyz_list), 'Expected format mismatch.'
 
     # init eval utils
@@ -206,19 +218,20 @@ def main(gt_path, pred_path, output_dir, pred_file_name=None, set_name=None):
     shape_is_mano = False
 
     rng = len(pred)
+
     # iterate over the dataset once
-    for idx in range(1):
+    for idx in range(100):
 
         xyz = np.array(xyz_list[idx])
        # xyz = [np.array(x) for x in xyz]
 
         xyz_pred = np.array(pred[idx])
-        print(xyz)
-        print(xyz_pred)
+        #print(xyz)
+        #print(xyz_pred)
 
        # xyz_pred = [np.array(x) for x in xyz_pred]
-        print('xyz_pred', np.shape(xyz_pred))
-        print('xyz', np.shape(xyz))
+        #print('xyz_pred', np.shape(xyz_pred))
+        #print('xyz', np.shape(xyz))
         # Not aligned errors
 
         eval_xyz.feed(
@@ -238,17 +251,53 @@ def main(gt_path, pred_path, output_dir, pred_file_name=None, set_name=None):
             np.ones(xyz.shape[0]),
             xyz_pred_aligned
         )
+    eval_xy_aligned,eval_xy = EvalUtil(), EvalUtil()
+
+    for idx in range(100):
+
+        xy = np.array(xy_list[idx])
+        #xy[:,0] = xy[:,0]+1
+       # xyz = [np.array(x) for x in xyz]
+
+        xy_p = np.array(xy_pred[idx])
+        #print(xyz)
+        #print(xyz_pred)
+
+
+        # Not aligned errors
+        eval_xy.feed(
+            xy,
+            np.ones(xy.shape[0]),
+            xy_p
+        )
+        xy_aligned_p = align_w_scale(xy, xy_p)
+
+        eval_xy_aligned.feed(
+           xy,
+           np.ones(xy.shape[0]),
+           xy_aligned_p
+       )
+
 
 
     # Calculate results
-    xyz_mean3d, _, xyz_auc3d, pck_xyz, thresh_xyz = eval_xyz.get_measures(0.0, 0.05, 100)
+    xyz_mean3d, _, xyz_auc3d, pck_xyz, thresh_xyz = eval_xyz.get_measures(0.0, 0.05, 200)
     print('Evaluation 3D KP results:')
     print('auc=%.3f, mean_kp3d_avg=%.2f cm' % (xyz_auc3d, xyz_mean3d * 100.0))
 
     xyz_al_mean3d, _, xyz_al_auc3d, pck_xyz_al, thresh_xyz_al = eval_xyz_aligned.get_measures(0.0, 0.05, 100)
     print('Evaluation 3D KP ALIGNED results:')
     print('auc=%.3f, mean_kp3d_avg=%.2f cm\n' % (xyz_al_auc3d, xyz_al_mean3d * 100.0))
+    print('Wierd that this curve')
+    xy_mean2d, _, xy_auc2d, pck_xy, thresh_xy = eval_xy.get_measures(0.0, 20, 100)
+    print('Evaluation 2D KP results:')
+    #print('auc=%.3f, mean_kp2d_avg=%.2f px(?)' % (xy_auc2d, xy_mean2d * 100.0))
+    print('auc=%.3f, mean_kp2d_avg=%.2f px(?)' % (xy_auc2d, xy_mean2d))
 
+    xy_mean2d_al, _, xy_auc2d_al, pck_xy_al, thresh_xy_al = eval_xy_aligned.get_measures(0.0, 20, 100)
+    print('Evaluation 2D KP ALIGNED results:')
+    # print('auc=%.3f, mean_kp2d_avg=%.2f px(?)' % (xy_auc2d, xy_mean2d * 100.0))
+    print('auc=%.3f, mean_kp2d_avg=%.2f px(?)' % (xy_auc2d_al, xy_mean2d_al))
 
     print('F-scores')
     f_out = list()
@@ -283,13 +332,19 @@ def main(gt_path, pred_path, output_dir, pred_file_name=None, set_name=None):
                   'PCK curve for keypoint error'),
             curve(thresh_xyz_al, pck_xyz_al, 'Distance in cm', 'Percentage of correct keypoints',
                   'PCK curve for aligned keypoint error'),
+            curve(thresh_xy, pck_xy, 'Distance in px', 'Percentage of correct keypoints',
+                  'PCK curve for aligned keypoint error'),
+            curve(thresh_xy_al, pck_xy_al, 'Distance in px', 'Percentage of correct keypoints',
+                  'PCK curve for aligned keypoint error'),
         ]
     )
 
     pck_curve_data = {
         'xyz': [thresh_xyz.tolist(), pck_xyz.tolist()],
         'xyz_al': [thresh_xyz_al.tolist(), pck_xyz_al.tolist()],
-       }
+        'xy': [thresh_xy.tolist(), pck_xy.tolist()],
+        'xy_al': [thresh_xy_al.tolist(), pck_xy_al.tolist()],
+    }
     with open('pck_data.json', 'w') as fo:
         json.dump(pck_curve_data, fo)
 
