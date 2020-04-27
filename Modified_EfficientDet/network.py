@@ -96,9 +96,15 @@ def build_BiFPN(features, num_channels, id, freeze_bn=False):
     return P3_out, P4_out, P5_out#, P6_out , P7_out
 
 
-def build_wBiFPN(features, num_channels, id, freeze_bn=False):
+def build_wBiFPN(features, num_channels, id, im_size = 224,freeze_bn=False):
     if id == 0:
-        _, _, C3, C4, C5 = features
+        if im_size == 112:
+            _,C3, C4, C5, _ = features
+        elif im_size == 56:
+            C3,C4,C5, _, _ = features
+        else:
+            _, _,C3, C4, C5 = features
+
         P3_in = ConvBlock(num_channels, kernel_size=1, strides=1, freeze_bn=freeze_bn, name='BiFPN_{}_P3'.format(id))(
             C3)
         P4_in = ConvBlock(num_channels, kernel_size=1, strides=1, freeze_bn=freeze_bn, name='BiFPN_{}_P4'.format(id))(
@@ -132,7 +138,7 @@ def build_wBiFPN(features, num_channels, id, freeze_bn=False):
     P5_U = layers.UpSampling2D()(P5_in)
     P4_td = wBiFPNAdd(name=f'w_bi_fpn_add_{8 * id + 2}')([P5_U, P4_in])
     P4_td = DepthwiseConvBlock(kernel_size=3, strides=1, freeze_bn=freeze_bn, name='BiFPN_{}_U_P4'.format(id))(P4_td)
-    P4_U = layers.UpSampling2D()(P4_td)
+    P4_U = layers.UpSampling2D()(P4_in)
     P3_out = wBiFPNAdd(name=f'w_bi_fpn_add_{8 * id + 3}')([P4_U, P3_in])
     P3_out = DepthwiseConvBlock(kernel_size=3, strides=1, freeze_bn=freeze_bn, name='BiFPN_{}_U_P3'.format(id))(P3_out)
     # downsample
@@ -182,8 +188,8 @@ def liftpose(uv_coords, features):
     # Save the output layer and then pop it to remove
     uv_coords = layers.Flatten()(uv_coords)
 
-    features = layers.MaxPooling2D(strides=(2, 2))(features)
-    features = layers.Conv2D(21, kernel_size = 1, strides = 1, activation = 'relu')(features)
+    features = layers.MaxPooling2D(pool_size=(2, 2),strides=(2, 2))(features)
+    features = layers.Conv2D(8, kernel_size = 1, strides = 1, padding = 'same',activation = 'relu')(features)
     features = layers.Flatten()(features)
     uv_coords = layers.Concatenate()([uv_coords,features])
 
@@ -207,10 +213,10 @@ def liftpose(uv_coords, features):
     print('added : ', added)
     # added = layers.Flatten()(added)
     
-    depth = layers.Dense(63, activation='linear', name = 'uv_depth')(added)
-    # rel_depth = layers.Reshape((21,3), name = 'uv_depth')(rel_depth)
+    xyz = layers.Dense(63, activation='linear', name = 'xyz_loss')(added)
+    # rel_depth = layers.Reshape((21,3), name = 'xyz_loss')(rel_depth)
 
-    return depth
+    return xyz
 
 def calc_xyz(z_can, uv_coords):
     z_can = tf.expand_dims(z_can ,axis = -1)
@@ -223,10 +229,9 @@ def calc_xyz(z_can, uv_coords):
 def efficientdet(phi,input_shape = (224,224,3),include_depth = False, num_classes=20, weighted_bifpn=False, freeze_bn=False, score_threshold=0.01):
     assert phi in range(7)
     input_size = image_sizes[phi]
-    # input_shape = (input_size, input_size, 3)
-    # input_shape = (224, 224, 3)
     input_shape = input_shape
-    num_rows, num_cols = (224,224)
+    num_rows, num_cols, _ = input_shape
+    im_size = num_rows
     image_input = layers.Input(input_shape)
     w_bifpn = w_bifpns[phi]
     d_bifpn = 2 + phi
@@ -236,13 +241,13 @@ def efficientdet(phi,input_shape = (224,224,3),include_depth = False, num_classe
     weights = phi
     # features = backbone_cls(include_top=False, input_shape=input_shape, weights=weights)(image_input)
     features = backbone_cls(input_tensor=image_input, freeze_bn=freeze_bn)
-    print(features)
-    for feat in features:
-        print(feat.shape)
+    # print(features)
+    # for feat in features:
+    #     print(feat.shape)
 
     if weighted_bifpn:
         for i in range(d_bifpn):
-            features = build_wBiFPN(features, w_bifpn, i, freeze_bn=freeze_bn)
+            features = build_wBiFPN(features, w_bifpn, i, im_size,freeze_bn=freeze_bn)
     else:
         for i in range(d_bifpn):
             features = build_BiFPN(features, w_bifpn, i, freeze_bn=freeze_bn)
@@ -264,29 +269,29 @@ def efficientdet(phi,input_shape = (224,224,3),include_depth = False, num_classe
     feature2_cont = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature2)
     # feature2_cont = layers.DepthwiseConv2D(kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature2)
     # feature2 = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'sigmoid', name = 'size3')(feature3)
-    feature1 = layers.UpSampling2D()(feature2_cont) # from 56 -> 112
+    # feature1 = layers.UpSampling2D()(feature2_cont) # from 56 -> 112
     
-    feature1_cont = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature1)
+    # feature1_cont = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature1)
     # feature1_cont = layers.DepthwiseConv2D(kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature1)
     # feature1 = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'sigmoid', name = 'size2')(feature1)
-    feature_cont = layers.UpSampling2D()(feature1_cont) #from 112 -> 224
+    # feature_cont = layers.UpSampling2D()(feature1_cont) #from 112 -> 224
     # feature = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'sigmoid', name = 'normalsize')(feature_cont)
-    feature = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'linear')(feature_cont)
+    # feature = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'linear')(feature_cont)
     # depth = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'linear', name = 'depthmaps')(feature_cont)
 
     # feature = layers.Reshape((224,224))(feature)
-    # feature = feature2
+    feature = feature2_cont
 
     # This should be of shape (Batch_size, 21, 2)
     # Contains the uv_coords for the keyjoints based on heatmaps
-    x_pos = np.empty((num_rows, num_cols), np.float32)
-    y_pos = np.empty((num_rows, num_cols), np.float32)
+    x_pos = np.empty((56, 56), np.float32)
+    y_pos = np.empty((56, 56), np.float32)
 
     # Assign values to positions
-    for i in range(num_rows):
-      for j in range(num_cols):
-        x_pos[i, j] = 2.0 * j / (num_cols - 1.0) - 1.0
-        y_pos[i, j] = 2.0 * i / (num_rows - 1.0) - 1.0
+    for i in range(56):
+      for j in range(56):
+        x_pos[i, j] = 2.0 * j / (56 - 1.0) - 1.0
+        y_pos[i, j] = 2.0 * i / (56 - 1.0) - 1.0
         # x_pos[i,j] = j
         # y_pos[i,j] = i
 
@@ -295,17 +300,17 @@ def efficientdet(phi,input_shape = (224,224,3),include_depth = False, num_classe
     image_coords = tf.stack([x_pos,y_pos], axis = -1)
     # print('image coordinates : ', image_coords)
 
-    uv_coords = spatial_soft_argmax(feature,224, 224, 21, image_coords)
+    uv_coords = spatial_soft_argmax(feature,56, 56, 21, image_coords)
     # uv_coords = tf.compat.v1.contrib.layers.spatial_softmax(features, name = 'uv_coords')
     uv_coords_out = layers.Layer(name = 'uv_coords')(uv_coords)
     
     # set true if only the final part is trained
     # if include_depth == True:
-    z_can = liftpose(uv_coords, feature3)
+    xyz = liftpose(uv_coords, feature3)
 
     # xyz = calc_xyz(z_can, uv_coords)
 
-    model = models.Model(inputs=[image_input], outputs=[uv_coords_out, z_can])
+    model = models.Model(inputs=[image_input], outputs=[uv_coords_out, xyz])
         # Freeze the backbone layer
         # for layer in model.layers[:-13]:
             # layer.trainable = False
