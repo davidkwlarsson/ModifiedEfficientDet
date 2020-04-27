@@ -42,6 +42,7 @@ from network import efficientdet # , efficientdet_coord
 from efficientnet import BASE_WEIGHTS_PATH, WEIGHTS_HASHES
 from FreiHAND.freihand_utils import *
 from losses import *
+from help_functions import plot_acc_loss
 
 from FreiHAND.tfdatagen_frei import tf_generator, benchmark
 
@@ -106,90 +107,6 @@ def scheduler(epoch):
 default_timeit_steps = 1000
 BATCH_SIZE = 16
 
-@tf.function
-def tf_onehots(xyz, K):
-
-    def tf_projectPoints(xyz, K): 
-        """ Project 3D coordinates into image space. """
-        uv = tf.transpose(tf.linalg.matmul(K, tf.transpose(xyz)))
-        return uv[:, :2] / uv[:, -1:]
-    
-    def tf_create_onehot(uv,h,w):
-        uv = uv[:,::-1]
-        temp_im = np.zeros(shape = (w,h,21))
-        # temp_im2 = tf.zeros(shape = (w*2,h*2,21))
-        # temp_im3 = tf.zeros(shape = (w*4,h*4,21))
-        j = 0
-        print(uv)
-        for coord in uv:
-            try:
-                temp_im[int(coord[0]/8), int(coord[1]/8),j] = 1
-                # temp_im2[int(coord[0]/2), int(coord[1]/2),j] = 1
-                # temp_im3[int(coord[0]), int(coord[1]),j] = 1
-                j += 1
-            except:
-                print("\n Coordinates where out of range : " , coord[0], coord[1])
-                j += 1
-        return tf.convert_to_tensor(temp_im) #, temp_im2, temp_im3
-   
-    
-    def tf_get_depth(xyz):
-        depth = np.zeros(shape = 21)
-        
-        for j in range(21):
-            print(xyz[j,2])
-            depth[j] = xyz[j,2]
-            # depth[j] = 1
-    
-        return tf.convert_to_tensor(depth)
-    
-
-
-    uv = tf_projectPoints(xyz, K)
-
-    onehots = tf_create_onehot(uv,28,28)
-    depth = tf_get_depth(xyz)
-    return onehots, depth #[0], onehots[1], onehots[2]
-
-def get_tfdata(dir_path):
-    xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))#[:300]
-    K_list = json_load(os.path.join(dir_path, 'training_K.json'))#[:300]
-    length = len(xyz_list)*4
-    # xyz_list *= 4
-    xyz_data = tf.data.Dataset.from_tensor_slices(xyz_list)
-    K_data = tf.data.Dataset.from_tensor_slices(K_list)
-    heatmaps_ds = tf.data.Dataset.zip((xyz_data, K_data))
-    # heatmaps_ds = heatmaps_ds.as_numpy_iterator()
-
-    heatmaps_ds = heatmaps_ds.map(lambda x,y: tf_onehots(x,y))
-    heatmaps_ds = heatmaps_ds.repeat(4)
-    # for heats in heatmaps_ds.take(1):
-    #     print(heats.numpy())
-    
-    image_path = os.path.join(dir_path, 'training/rgb/*')
-    list_ds = tf.data.Dataset.list_files(image_path, shuffle = False)
-    # for f in list_ds.take(5):
-    #     print(f.numpy())
-
-
-    # list_ds = list_ds.take(length)
-
-    def get_tfimage(image_path):
-        img = tf.io.read_file(image_path)
-        img = tf.image.decode_png(img,channels = 3)
-        img = tf.image.convert_image_dtype(img, tf.float32)
-        img = tf.image.resize(img, [224,224])
-        return img
-    list_ds = list_ds.map(get_tfimage)
-
-    # for image in list_ds.take(1):
-    #     print("Image shape: ", image.numpy().shape)
-
-    labeled_ds = tf.data.Dataset.zip((list_ds, heatmaps_ds))
-    labeled_ds = labeled_ds.shuffle(buffer_size = length, reshuffle_each_iteration = True)
-    # labeled_ds = labeled_ds.repeat()
-    labeled_ds = labeled_ds.batch(16)
-    return labeled_ds
 
 
 # This seems to not work as intended
@@ -204,9 +121,9 @@ class ChangeWLcallback(tf.keras.callbacks.Callback):
         if epoch == 8:
             K.set_value(self.alpha, 0.0)
             K.set_value(self.beta, 1.0)
-            for layer in self.model.layers[-13:]:
+            for layer in self.model.layers[-16:]:
                 layer.trainable = True
-            for layer in self.model.layers[:-13]:
+            for layer in self.model.layers[:-16]:
                 layer.trainable = False
             print("Changed to loss for depth and train only the liftpose network")
 
@@ -216,58 +133,31 @@ def main():
 
 
     use_saved_model = False
-    train_uv = False
-    train_z = False
-    train_full = True
+    train_uv = True
+    train_xyz = True
+    train_full = False
 
 
 
     weighted_bifpn = True
     freeze_backbone = False
-    input_shape = (224,224,3)
+    input_shape = (56,56,3)
+    im_size = (56,56)
     tf.compat.v1.keras.backend.set_session(get_session())
     print(tf.__version__)
     # images, heatmaps, heatmaps2,heatmaps3, coord = get_trainData(dir_path, 100, multi_dim=True)
     batch_size = 16
     nbr_epochs = 10
     num_samp = 128000
-    num_val_samp = 1000
-    train_dataset = tf_generator(dir_path, batch_size=batch_size, num_samp=num_samp, data_set = 'training')
-    valid_dataset = tf_generator(dir_path, batch_size=batch_size, num_samp=num_val_samp, data_set = 'validation')
+    num_val_samp = 2240
+    train_dataset = tf_generator(dir_path, im_size = im_size,batch_size=batch_size, num_samp=num_samp, data_set = 'training')
+    valid_dataset = tf_generator(dir_path, im_size = im_size,batch_size=batch_size, num_samp=num_val_samp, data_set = 'validation')
     traingen = train_dataset.prefetch(batch_size)
     validgen = valid_dataset.prefetch(batch_size)
     print(traingen)
-    # num_rows, num_cols = (224,224)
-    # x_pos = np.empty((num_rows, num_cols), np.float32)
-    # y_pos = np.empty((num_rows, num_cols), np.float32)
-
-    # # Assign values to positions
-    # for i in range(num_rows):
-    #   for j in range(num_cols):
-    #     x_pos[i, j] = 2.0 * j / (num_cols - 1.0) - 1.0
-    #     y_pos[i, j] = 2.0 * i / (num_rows - 1.0) - 1.0
-    # print(x_pos)
-    # print(y_pos)
-    # # x_pos = tf.reshape(x_pos, [num_rows * num_cols])
-    # # y_pos = tf.reshape(y_pos, [num_rows * num_cols])
-    # image_coords = tf.stack([x_pos,y_pos], axis = -1)
-    # sum_scatter_hand = True
-    # if sum_scatter_hand:
-    #     for sample in traingen:
-            
-    #         print(sample[1])
-    #         b_target = sample[1]
-    #         # for i in range(21):
-    #         #    print(np.array(sample[1][0][i])*224)
-    #         print((spatial_soft_argmax(b_target, 224,224,21, image_coords)[0] + 1)*112)
-
-    #         break
-    
-    # check if it looks good
-    # plot_heatmaps_with_coords(images, heatmaps, coord)
 
     checkpoint = tf.keras.callbacks.ModelCheckpoint(
-            filepath='mymodel3.h5',
+            filepath='model_checkpoint.h5',
             # Path where to save the model
             # The two parameters below mean that we will overwrite
             # the current checkpoint if and only if
@@ -278,7 +168,7 @@ def main():
             verbose=1)
 
 
-    callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
+    # callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
 
     earlystop = tf.keras.callbacks.EarlyStopping(
         monitor='val_loss', min_delta=0, patience=5, verbose=0, mode='auto',
@@ -309,22 +199,25 @@ def main():
     # compile model
     print("Compiling model ... \n")
     # losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce}
-    losses = {"uv_coords" : 'mean_squared_error', 'uv_depth' : 'mean_squared_error' } #, 'xyz_loss' : 'mean_squared_error'}
+    losses = {"uv_coords" : 'mean_squared_error', 'xyz_loss' : 'mean_squared_error' } #, 'xyz_loss' : 'mean_squared_error'}
     # # losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce, 'depthmaps' : 'mean_squared_error'}
     # lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0}
     # lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0, 'depthmaps' : 1.0}
     # focalloss = SigmoidFocalCrossEntropy(reduction=Reduction.SUM_OVER_BATCH_SIZE)
     if train_full:
-        lossWeights = {"uv_coords" : 1.0, 'uv_depth' : 1.0} #, "xyz_loss" : 0.0}
+        lossWeights = {"uv_coords" : 1.0, 'xyz_loss' : 0.1} #, "xyz_loss" : 0.0}
         model.compile(optimizer = Adam(lr=1e-3),
                         loss = losses, loss_weights = lossWeights,
                         )
-        callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
+        # callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
         print("Number of parameters in the model : " ,model.count_params())
         print(model.summary())
         history = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
-                        ,steps_per_epoch = num_samp//batch_size, epochs = 50, verbose=1, callbacks = [checkpoint, callback])
-
+                        ,steps_per_epoch = num_samp//batch_size, epochs = 1, verbose=1, callbacks = [checkpoint])
+        try:
+            plot_acc_loss(history)
+        except:
+            print('could not plot loss')
 
 
     if train_uv:
@@ -332,8 +225,8 @@ def main():
         # Freeze the liftpose layers
         alpha = 1.0 # tf.keras.backend.variable(1.0)
         beta = 0.0   # tf.keras.backend.variable(1.0)
-        lossWeights = {"uv_coords" : alpha, 'uv_depth' : beta} #, "xyz_loss" : 0.0}
-        for layer in model.layers[-13:]:
+        lossWeights = {"uv_coords" : alpha, 'xyz_loss' : beta} #, "xyz_loss" : 0.0}
+        for layer in model.layers[-16:]:
             layer.trainable = False
 
         model.compile(optimizer = Adam(lr=1e-3),
@@ -353,9 +246,12 @@ def main():
 
         # callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
 
-        history = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
-                        ,steps_per_epoch = num_samp//batch_size, epochs = 20, verbose=1, callbacks=[checkpoint, earlystop, lr_plateau])
-
+        history_uv = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
+                        ,steps_per_epoch = num_samp//batch_size, epochs = 10, verbose=1, callbacks=[checkpoint])
+        try:
+            plot_acc_loss(history_uv, uv_only=True)
+        except:
+            print('could not plot loss')
     # layer = model.get_layer('connect_keypoint_layer')
     # weights = layer.get_weights()
     # for weight, values in zip(layer.weights,weights):
@@ -363,24 +259,31 @@ def main():
     #         print(weight, "with the value = ", values)
     # print(layer[-1]) 
 
-    if train_z:
-        for layer in model.layers[:-13]:
-            layer.trainable = False
-        for layer in model.layers[-13:]:
+    if train_xyz:
+        for layer in model.layers:
             layer.trainable = True
 
-        lossWeights = {"uv_coords" : 0.0, 'uv_depth' : 1.0}
+        lossWeights = {"uv_coords" : 0.0, 'xyz_loss' : 1.0}
         model.compile(optimizer = Adam(lr=1e-3),
                         loss = losses, loss_weights = lossWeights,
                         )
 
         
         print("Number of parameters in the model : " ,model.count_params())
-        history2 = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
-                        ,steps_per_epoch = num_samp//batch_size, epochs = 5, verbose=1, callbacks = [earlystop, lr_plateau])
+        history_xyz = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
+                        ,steps_per_epoch = num_samp//batch_size, epochs = 5, verbose=1, callbacks = [checkpoint])
 
+        try:    
+            plot_acc_loss(history_xyz, xyz_only=True)
+        except:
+            print('could not plot loss')
 
-    save_model(model)
+    # save_model(model)
+    for layer in model.layers:
+            layer.trainable = True
+    # model.save_weights('model.h5')
+    # model.save('saved_model/my_model')
+    
 
     validgen2 = dataGenerator(dir_path, batch_size= 16, data_set = 'validation')
     images, targets = next(validgen2)
@@ -399,15 +302,9 @@ def main():
     # print(np.shape(xyz_pred))
     print(np.shape(coord), np.shape(preds))
 
-    
-    try:
-        plot_acc_loss(history)
-    except:
-        print('could not plot loss')
-
     # get coordinates from predictions
     # coord_preds = heatmaps_to_coord(preds)
-    coord_preds = np.reshape((np.array(preds)+1)*112, (10,42))
+    coord_preds = np.reshape((np.array(preds)+1)*56, (10,42))
     print('predicted : ', coord_preds[0])
     print('target : ', coord[0])
     # coord = heatmaps_to_coord(heatmaps)

@@ -4,6 +4,7 @@ import numpy as np
 import tensorflow as tf
 import time
 import matplotlib.pyplot as plt
+import random
 
 sys.path.insert(1, '../')
 
@@ -11,17 +12,21 @@ from heatmapsgen import projectPoints
 from help_functions import json_load
 
 
-def create_image_dataset(dir_path, num_samples, data_set):
+def create_image_dataset(dir_path, num_samples, data_set, im_size = (224,224)):
+    rows, cols = im_size
     image_path = os.path.join(dir_path, data_set ,'rgb/*')
     list_ds = tf.data.Dataset.list_files(image_path, shuffle=False)
 
     list_ds = list_ds.take(num_samples)
 
     def get_tfimage(image_path):
+        print("inside tfimage : ", im_size)
         img = tf.io.read_file(image_path)
         img = tf.image.decode_png(img, channels=3)
         img = tf.image.convert_image_dtype(img, tf.float32)
-        img = tf.image.resize(img, [224, 224])
+        img = tf.image.resize(img, [rows, cols])
+        # method = tf.image.ResizeMethod.BILINEAR
+        # tf.image.resize([image], [image_size, image_size], method)[0]
         return img
 
     list_ds = list_ds.map(get_tfimage)
@@ -44,23 +49,27 @@ def get_raw_data(dir_path, data_set):
         #            [i for i in range( 97680, 129680)]
         print("Total number of training samples: ", num_samples)#, " and ", len(indicies))
     elif data_set == 'validation':
-        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-560:]
+        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-560:-100]
         xyz_list *= 4
         num_samples = len(xyz_list)
-        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-560:]
+        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-560:-100]
         K_list *= 4
-        s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[-560:]
+        s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[-560:-100]
         s_list *= 4
         # indicies = [i for i in range(32000, 32560)] + \
         #            [i for i in range(64560, 65120)] + \
         #            [i for i in range(97120, 97680)] + \
         #            [i for i in range(129680,130240)]
         print("Total number of validation samples: ", num_samples)#, " and ", len(indicies))
-    elif data_set == 'evaluation':
-        xyz_list = json_load(os.path.join(dir_path, 'evaluation_xyz.json'))
+    elif data_set == 'test':
+        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-100:]
+        xyz_list *= 4
         num_samples = len(xyz_list)
-        K_list = json_load(os.path.join(dir_path, 'evaluation_K.json'))
-        indicies = 0
+        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-100:]
+        K_list *= 4
+        s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[-100:]
+        s_list *= 4
+        # indicies = 0
 
     else:
         print("No specified data found!")
@@ -254,19 +263,20 @@ def augment(image,label):
     image = tf.image.random_saturation(image, 0.8, 2.0)
     return image,label
 
-
-def tf_generator(dir_path, batch_size=8, num_samp = 100, data_set = 'training'):
+def tf_generator(dir_path,im_size, batch_size=16, num_samp = 100, data_set = 'training'):
     """ Create generator, right now seperate one for
         heatmaps and one to read images"""
+    # print(data_set)
     dataset_uv = tf.data.Dataset.from_generator(
         gen,
         output_types=(tf.float32,tf.float32),
         output_shapes=(tf.TensorShape([21,2]),tf.TensorShape([63])),
         args=[num_samp, dir_path, data_set])
     # dataset_hm = dataset_uv.map(map_uv_to_hm, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    dataset_im = create_image_dataset(dir_path, num_samp, data_set)
+    dataset_im = create_image_dataset(dir_path, num_samp, data_set, im_size)
     dataset = tf.data.Dataset.zip((dataset_im, dataset_uv))
     if data_set == "training":
         dataset = dataset.map(augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        dataset = dataset.shuffle(batch_size*100, reshuffle_each_iteration=True) 
     batched_dataset = dataset.repeat().batch(batch_size)
     return batched_dataset
