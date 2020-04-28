@@ -211,15 +211,15 @@ def mse_bone_length_loss(y_true, y_pred):
 
 
 
-
+import math as m
 import tensorflow as tf
 def norm_p(i, b_F):
     n, norm = tf.linalg.normalize(tf.linalg.cross(b_F[i+1], b_F[i]))
     return n
 
 def angle(v1, v2):
-    print("...  : ", tf.tensordot(v1,v2,1))
-    print(".... : ",  tf.norm(v1)*tf.norm(v2))
+    # print("...  : ", tf.tensordot(v1,v2,1))
+    # print(".... : ",  tf.norm(v1)*tf.norm(v2))
     alpha = tf.math.acos(tf.tensordot(v1,v2, 1)/ \
         (tf.norm(v1)*tf.norm(v2)))
     return alpha
@@ -236,7 +236,7 @@ def angle_loss():
         # vector number 
         b = []
         b_F = []
-        print(y_pred)
+        # print(y_pred)
         y_pred = tf.reshape(y_pred,(-1,3))
         b_F.append(y_pred[1,:] - y_pred[0,:])
         for i in range(0,4):
@@ -280,10 +280,10 @@ def angle_loss():
     def calc_angle(b, x,y,z):
         theta_a = []
         theta_f = []
-        print("b : ", len(b))
-        print("x : ", len(x))
-        print("y : ", len(y))
-        print("z : ", len(z))
+        # print("b : ", len(b))
+        # print("x : ", len(x))
+        # print("y : ", len(y))
+        # print("z : ", len(z))
         for i in range(len(b)):
             if i not in [0,1,5,9,13,17]:
                 if i in [2,3,4]:
@@ -302,14 +302,15 @@ def angle_loss():
         return theta_a, theta_f
 
     def D_H(theta_a, theta_f):
-        max_f = 180
-        max_a = 90
-        print("theta_a : ", theta_a)
-        print("theta_f : ", theta_f)
-        dist_a = tf.math.abs(theta_a) - 180
-        dist_f = tf.math.abs(theta_f) - 90
-        dist_a = tf.cond(tf.math.greater(dist_a,0), lambda : dist_a, lambda : 0)
-        dist_f = tf.cond(tf.math.greater(dist_f,0), lambda : dist_f, lambda : 0)
+        max_f = m.pi
+        max_a = m.pi/2
+        # print("theta_a : ", theta_a)
+        # print("theta_f : ", theta_f)
+        dist_a = tf.math.abs(theta_a) - max_a
+        dist_f = tf.math.abs(theta_f) - max_f
+        zero = tf.constant(0, dtype = tf.float32)
+        dist_a = tf.cond(tf.math.greater(dist_a,0), lambda : dist_a, lambda : tf.constant(0, dtype = tf.float32))
+        dist_f = tf.cond(tf.math.greater(dist_f,0), lambda : dist_f, lambda : tf.constant(0, dtype = tf.float32))
         return dist_a + dist_f
     
     def loss(y_true, y_pred):
@@ -322,6 +323,7 @@ def angle_loss():
 
         mse_loss = tf.keras.losses.MSE(y_true, y_pred)
         # mse_loss = K.mean(K.square(y_true-y_pred))
-        return mse_loss + L_a/15  
+
+        return mse_loss + 1000*L_a/15  
         
     return loss

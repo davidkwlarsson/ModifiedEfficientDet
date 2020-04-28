@@ -1,8 +1,11 @@
 import sys 
 import os
 import numpy as np
+import tensorflow as tf
 from numpy import loadtxt
 from FreiHAND.freihand_utils import projectPoints
+from MobileNet.mobnetwork import efficientdet_mobnet
+
 
 class EvalUtil:
     """ Util class for evaluation networks.
@@ -30,7 +33,7 @@ class EvalUtil:
         diff = keypoint_gt - keypoint_pred
         euclidean_dist = np.sqrt(np.sum(np.square(diff),axis = 1))
 
-        num_kp = keypoint_gt.shape[1]
+        num_kp = keypoint_gt.shape[0]
         for i in range(num_kp):
             if keypoint_vis[i]:
                 self.data[i].append(euclidean_dist[i])
@@ -189,33 +192,38 @@ def eval_with_model():
     dir_path = sys.argv[1]
     phi = 0
     weighted_bifpn = True
-    freeze_backbone = True
+    freeze_backbone = False
     input_shape = (224,224,3)
     tf.compat.v1.keras.backend.set_session(get_session())
     print(tf.__version__)
+    print("EVALUATION")
     # images, heatmaps, heatmaps2,heatmaps3, coord = get_trainData(dir_path, 100, multi_dim=True)
     batch_size = 16
     nbr_epochs = 10
     num_samp = 128000
     num_val_samp = 1000
-    train_dataset = tf_generator(dir_path, batch_size=batch_size, num_samp=num_samp, data_set = 'training')
+    # train_dataset = tf_generator(dir_path, batch_size=batch_size, num_samp=num_samp, data_set = 'training')
     valid_dataset = tf_generator(dir_path, batch_size=batch_size, num_samp=num_val_samp, data_set = 'validation')
-    traingen = train_dataset.prefetch(batch_size)
+    # traingen = train_dataset.prefetch(batch_size)
     validgen = valid_dataset.prefetch(batch_size)
-    model = efficientdet(phi, input_shape = input_shape,
-                        include_depth= False,
-                        weighted_bifpn=weighted_bifpn,
-                        freeze_bn=freeze_backbone)
-    model.load_weights('model.h5')
-    losses = {"uv_coords" : 'mean_squared_error', 'uv_depth' : 'mean_squared_error'}#, 'xyz_loss' : 'mean_squared_error'}
+    # model = efficientdet(phi, input_shape = input_shape,
+    #                     include_depth= False,
+    #                     weighted_bifpn=weighted_bifpn,
+    #                     freeze_bn=freeze_backbone)
+    model = efficientdet_mobnet(phi, input_shape = input_shape,weighted_bifpn=weighted_bifpn,
+                         freeze_bn=freeze_backbone)
+    # model.load_weights('model.h5')
+    model.load_weights('mobnet.h5', by_name = True)
+    losses = {"uv_coords" : 'mean_squared_error', 'xyz_loss' : 'mean_squared_error'}#, 'xyz_loss' : 'mean_squared_error'}
     alpha = 1.0 # tf.keras.backend.variable(1.0)
     beta = 1.0   # tf.keras.backend.variable(1.0)
-    lossWeights = {"uv_coords" : alpha, 'uv_depth' : beta} #, 'xyz_loss' : 0.0}
+    lossWeights = {"uv_coords" : alpha, 'xyz_loss' : beta} #, 'xyz_loss' : 0.0}
     model.compile(optimizer = Adam(lr=1e-3),
                     loss = losses, loss_weights = lossWeights,
                     )
     
     preds, xyz_pred = model.predict(validgen, steps = 40)
+    model.save('saved_model/my_model')
     preds = (np.array(preds[:500]) + 1)*112
     print(np.shape(preds))
     preds = np.reshape(preds, (-1, 42))

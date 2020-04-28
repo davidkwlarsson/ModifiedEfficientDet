@@ -103,25 +103,115 @@ def plot_heatmaps_with_coords(images, heatmaps, coords):
     print(coords[0][0:2])
 
 
-def plot_acc_loss(history):
+def plot_acc_loss(history, uv_only = False, xyz_only = False):
     # Plot acc and loss vs epochs
     # Plot acc and loss vs epochs
     #acc = history.history['acc']
     #val_acc = history.history['val_acc']
-    loss = history.history['loss']
-    val_loss = history.history['val_loss']
-    epochs = range(1, len(loss) + 1)
+    # loss = history.history['loss']
+    # val_loss = history.history['val_loss']
+    # epochs = range(1, len(loss) + 1)
    # plt.plot(epochs, acc, 'bo', label='Training acc')
    # plt.plot(epochs, val_acc, 'b', label='Validation acc')
     #plt.title('Training and validation accuracy')
     #plt.legend()
     #plt.figure()
-    plt.plot(epochs, loss, 'bo', label='Training loss')
-    plt.plot(epochs, val_loss, 'b', label='Validation loss')
-    plt.title('Training and validation loss')
-    plt.legend()
-    plt.show()
-    plt.savefig('acc_loss.png')
+    # plt.plot(epochs, loss, 'bo', label='Training loss')
+    # plt.plot(epochs, val_loss, 'b', label='Validation loss')
+    # plt.title('Training and validation loss')
+    # plt.legend()
+    # plt.show()
+    if uv_only:
+        dirName = 'saved_uv_data'
+        try:
+            # Create target Directory
+            os.mkdir(dirName)
+            print("Directory " , dirName ,  " Created ") 
+        except FileExistsError:
+            print("Directory " , dirName ,  " already exists")
+        # plt.savefig(os.path.join(dirName,'acc_uv_loss.png'))
+        print(history.history.keys())
+        loss = history.history['loss']
+        uv_loss = history.history['uv_coords_loss']
+        val_uv_loss = history.history['val_uv_coords_loss']
+        val_loss = history.history['val_loss']
+        lr = history.history['lr']
+        epochs = range(1, len(loss) + 1)
+        np.savetxt(os.path.join(dirName,'loss.csv'), loss, delimiter=',')
+        np.savetxt(os.path.join(dirName,'uv_loss.csv'), uv_loss, delimiter=',')
+        np.savetxt(os.path.join(dirName,'val_loss.csv'), val_loss, delimiter=',')
+        np.savetxt(os.path.join(dirName,'val_uv_loss.csv'), val_uv_loss, delimiter=',')
+        np.savetxt(os.path.join(dirName,'epochs.csv'), epochs, delimiter=',')
+        np.savetxt(os.path.join(dirName,'lr.csv'), lr, delimiter=',')
+    elif xyz_only:
+        dirName = 'saved_xyz_data'
+        try:
+            # Create target Directory
+            os.mkdir(dirName)
+            print("Directory " , dirName ,  " Created ") 
+        except FileExistsError:
+            print("Directory " , dirName ,  " already exists")
+        # plt.savefig(os.path.join(dirName,'acc_xyz_loss.png'))
+        print(history.history.keys())
+        loss = history.history['loss']
+        xyz_loss = history.history['xyz_loss']
+        val_xyz_loss = history.history['val_xyz_loss']
+        val_loss = history.history['val_loss']
+        lr = history.history['lr']
+        epochs = range(1, len(loss) + 1)
+        np.savetxt(os.path.join(dirName,'loss.csv'), loss, delimiter=',')
+        np.savetxt(os.path.join(dirName,'xyz_loss.csv'), xyz_loss, delimiter=',')
+        np.savetxt(os.path.join(dirName,'val_loss.csv'), val_loss, delimiter=',')
+        np.savetxt(os.path.join(dirName,'val_xyz_loss.csv'), val_xyz_loss, delimiter=',')
+        np.savetxt(os.path.join(dirName,'epochs.csv'), epochs, delimiter=',')
+        np.savetxt(os.path.join(dirName,'lr.csv'), lr, delimiter=',')
+    else:
+        dirName = 'saved_total_data'
+        try:
+            # Create target Directory
+            os.mkdir(dirName)
+            print("Directory " , dirName ,  " Created ") 
+        except FileExistsError:
+            print("Directory " , dirName ,  " already exists")
+        # plt.savefig(os.path.join(dirName,'acc_loss.png'))
+        print(history.history.keys())
+        loss = history.history['loss']
+        xyz_loss = history.history['xyz_loss']
+        val_xyz_loss = history.history['val_xyz_loss']
+        val_loss = history.history['val_loss']
+        lr = history.history['lr']
+        epochs = range(1, len(loss) + 1)
+        np.savetxt(os.path.join(dirName,'loss.csv'), loss, delimiter=',')
+        np.savetxt(os.path.join(dirName,'xyz_loss.csv'), xyz_loss, delimiter=',')
+        np.savetxt(os.path.join(dirName,'val_loss.csv'), val_loss, delimiter=',')
+        np.savetxt(os.path.join(dirName,'val_xyz_loss.csv'), val_xyz_loss, delimiter=',')
+        np.savetxt(os.path.join(dirName,'epochs.csv'), epochs, delimiter=',')
+        np.savetxt(os.path.join(dirName,'lr.csv'), lr, delimiter=',')
+
+
+
+def plot_acc_loss_2D(history):
+    dirName = 'saved_2D_uv_data'
+    try:
+        # Create target Directory
+        os.mkdir(dirName)
+        print("Directory " , dirName ,  " Created ") 
+    except FileExistsError:
+        print("Directory " , dirName ,  " already exists")
+    # plt.savefig(os.path.join(dirName,'acc_uv_loss.png'))
+    print(history.history.keys())
+    loss = history.history['loss']
+    uv_loss = history.history['uv_coords_loss']
+    val_uv_loss = history.history['val_uv_coords_loss']
+    val_loss = history.history['val_loss']
+    lr = history.history['lr']
+    epochs = range(1, len(loss) + 1)
+    np.savetxt(os.path.join(dirName,'loss.csv'), loss, delimiter=',')
+    np.savetxt(os.path.join(dirName,'uv_loss.csv'), uv_loss, delimiter=',')
+    np.savetxt(os.path.join(dirName,'val_loss.csv'), val_loss, delimiter=',')
+    np.savetxt(os.path.join(dirName,'val_uv_loss.csv'), val_uv_loss, delimiter=',')
+    np.savetxt(os.path.join(dirName,'epochs.csv'), epochs, delimiter=',')
+    np.savetxt(os.path.join(dirName,'lr.csv'), lr, delimiter=',')
 
 
 def read_img(idx, base_path, set_name, version=None):
@@ -137,6 +227,8 @@ def read_img(idx, base_path, set_name, version=None):
     return io.imread(img_rgb_path)
 
 
+
+
 def heatmaps_to_coord(heatmaps):
     coords = [[] for x in range(len(heatmaps))]
     for j in range(len(heatmaps)):
@@ -147,16 +239,6 @@ def heatmaps_to_coord(heatmaps):
 
     return np.array(coords)
 
-def get_depthmaps(uv,xyz_list):
-    depths = np.zeros((224,224,21))
-    xyz = np.array(xyz_list)
-    for j,coord in enumerate(uv):
-        try:
-            depths[int(coord[0]),int(coord[1]),j] = xyz[j, 2]
-        except:
-            print("\n")
-
-    return depths
 
 
 def create_gaussian_hm(uv, w, h):
@@ -215,7 +297,6 @@ def get_depth(xyz_list):
     for j in range(21):
         depth[j] = xyz[j, 2] #- xyz[0,2]
     return depth
-
 
 
 def save_preds(dir_path, predictions):
@@ -344,60 +425,6 @@ def change_format_coords(coords):
         xyz.append(np.array([x_coords, y_coords, z_coords]))
     return xyz
 
-### FOLLOWING CODE IS TAKEN FROM https://github.com/3d-hand-shape/hand-graph-cnn/blob/master/hand_shape_pose/util/vis.py
-
-color_hand_joints = [[1.0, 0.0, 0.0],
-                     [0.0, 0.4, 0.0], [0.0, 0.6, 0.0], [0.0, 0.8, 0.0], [0.0, 1.0, 0.0],  # thumb
-                     [0.0, 0.0, 0.6], [0.0, 0.0, 1.0], [0.2, 0.2, 1.0], [0.4, 0.4, 1.0],  # index
-                     [0.0, 0.4, 0.4], [0.0, 0.6, 0.6], [0.0, 0.8, 0.8], [0.0, 1.0, 1.0],  # middle
-                     [0.4, 0.4, 0.0], [0.6, 0.6, 0.0], [0.8, 0.8, 0.0], [1.0, 1.0, 0.0],  # ring
-                     [0.4, 0.0, 0.4], [0.6, 0.0, 0.6], [0.8, 0.0, 0.8], [1.0, 0.0, 1.0]]  # little
-
-
-def draw_3d_skeleton(pose_cam_xyz, image_size):
-    """
-    :param pose_cam_xyz: 21 x 3
-    :param image_size: H, W
-    :return:
-    """
-    assert pose_cam_xyz.shape[0] == 21
-
-    fig = plt.figure()
-    fig.set_size_inches(float(image_size[0]) / fig.dpi, float(image_size[1]) / fig.dpi, forward=True)
-
-    ax = plt.subplot(111, projection='3d')
-    marker_sz = 15
-    line_wd = 2
-
-    for joint_ind in range(pose_cam_xyz.shape[0]):
-        ax.plot(pose_cam_xyz[joint_ind:joint_ind + 1, 0], pose_cam_xyz[joint_ind:joint_ind + 1, 1],
-                pose_cam_xyz[joint_ind:joint_ind + 1, 2], '.', c=color_hand_joints[joint_ind], markersize=marker_sz)
-        if joint_ind == 0:
-            continue
-        elif joint_ind % 4 == 1:
-            ax.plot(pose_cam_xyz[[0, joint_ind], 0], pose_cam_xyz[[0, joint_ind], 1], pose_cam_xyz[[0, joint_ind], 2],
-                    color=color_hand_joints[joint_ind], lineWidth=line_wd)
-        else:
-            ax.plot(pose_cam_xyz[[joint_ind - 1, joint_ind], 0], pose_cam_xyz[[joint_ind - 1, joint_ind], 1],
-                    pose_cam_xyz[[joint_ind - 1, joint_ind], 2], color=color_hand_joints[joint_ind],
-                    linewidth=line_wd)
-
-
-    ax.set_xlabel('X')
-    ax.set_ylabel('Y')
-    ax.set_zlabel('Z')
-    # pickle.dump(fig, open('3DHands.fig.pickle', 'wb'))
-    plt.savefig('hands_3D.png')
-
-    # ret = fig2data(fig)  # H x W x 4
-    # plt.close(fig)
-    # return ret
-
-    # figx = pickle.load(open('3DHands.fig.pickle', 'rb'))
-    # print(" Opening Pickle file --- ")
-    # figx.show() # Show the figure, edit it, etc.!
-    plt.show()
-
 
 
 def save_coords(pose_cam_coord, image):
@@ -414,51 +441,109 @@ def save_coords(pose_cam_coord, image):
         print("No coordinates saved!")
 
 
+### FOLLOWING CODE IS TAKEN FROM https://github.com/3d-hand-shape/hand-graph-cnn/blob/master/hand_shape_pose/util/vis.py
 
 
-def save_model(model, mob_net = False):
-    model_json = model.to_json()    
-    if mob_net:
-        with open('mobnet.json', 'w') as json_file:
-            json_file.write(model_json)
-        model.save_weights('mobnet.h5')
-    else:
-        with open('model.json', 'w') as json_file:
-            json_file.write(model_json)
-        model.save_weights('model.h5')
-        print('Saved model to Disk! ')
 
-from tensorflow.keras.models import model_from_json
-from keypointconnector import ConnectKeypointLayer
-from layers import BatchNormalization, wBiFPNAdd
-from efficientnet import get_swish, get_dropout
-from tensorflow.keras import layers
+# color_hand_joints = [[1.0, 0.0, 0.0],
+#                      [0.0, 0.4, 0.0], [0.0, 0.6, 0.0], [0.0, 0.8, 0.0], [0.0, 1.0, 0.0],  # thumb
+#                      [0.0, 0.0, 0.6], [0.0, 0.0, 1.0], [0.2, 0.2, 1.0], [0.4, 0.4, 1.0],  # index
+#                      [0.0, 0.4, 0.4], [0.0, 0.6, 0.6], [0.0, 0.8, 0.8], [0.0, 1.0, 1.0],  # middle
+#                      [0.4, 0.4, 0.0], [0.6, 0.6, 0.0], [0.8, 0.8, 0.0], [1.0, 1.0, 0.0],  # ring
+#                      [0.4, 0.0, 0.4], [0.6, 0.0, 0.6], [0.8, 0.0, 0.8], [1.0, 0.0, 1.0]]  # little
 
 
-def load_model(dir = None,print_model = False):
-    if dir == None:
-        json_file = open('model.json', 'r')
-        h5model = 'model.h5'
-    else:
-        path = os.path.join(dir, 'model.json')
-        json_file = open(path, 'r')
-        h5model = os.path.join(dir, 'model.h5')
+# def draw_3d_skeleton(pose_cam_xyz, image_size):
+#     """
+#     :param pose_cam_xyz: 21 x 3
+#     :param image_size: H, W
+#     :return:
+#     """
+#     assert pose_cam_xyz.shape[0] == 21
 
-    loaded_model_json = json_file.read()
-    json_file.close()
-    print(loaded_model_json)
-    layer_dict = {'ConnectKeypointLayer' : ConnectKeypointLayer,
-                'BatchNormalization' : BatchNormalization,
-                'wBiFPNAdd' : wBiFPNAdd,
-                'swish': get_swish(),
-                'FixedDropout' : get_dropout()}
-    loaded_model = model_from_json(loaded_model_json, layer_dict)
-    loaded_model.load_weights(h5model)
-    print('Loaded model ')
-    if print_model == True:
-        print(loaded_model.summary())
+#     fig = plt.figure()
+#     fig.set_size_inches(float(image_size[0]) / fig.dpi, float(image_size[1]) / fig.dpi, forward=True)
 
-    return loaded_model
+#     ax = plt.subplot(111, projection='3d')
+#     marker_sz = 15
+#     line_wd = 2
+
+#     for joint_ind in range(pose_cam_xyz.shape[0]):
+#         ax.plot(pose_cam_xyz[joint_ind:joint_ind + 1, 0], pose_cam_xyz[joint_ind:joint_ind + 1, 1],
+#                 pose_cam_xyz[joint_ind:joint_ind + 1, 2], '.', c=color_hand_joints[joint_ind], markersize=marker_sz)
+#         if joint_ind == 0:
+#             continue
+#         elif joint_ind % 4 == 1:
+#             ax.plot(pose_cam_xyz[[0, joint_ind], 0], pose_cam_xyz[[0, joint_ind], 1], pose_cam_xyz[[0, joint_ind], 2],
+#                     color=color_hand_joints[joint_ind], lineWidth=line_wd)
+#         else:
+#             ax.plot(pose_cam_xyz[[joint_ind - 1, joint_ind], 0], pose_cam_xyz[[joint_ind - 1, joint_ind], 1],
+#                     pose_cam_xyz[[joint_ind - 1, joint_ind], 2], color=color_hand_joints[joint_ind],
+#                     linewidth=line_wd)
+
+
+#     ax.set_xlabel('X')
+#     ax.set_ylabel('Y')
+#     ax.set_zlabel('Z')
+#     # pickle.dump(fig, open('3DHands.fig.pickle', 'wb'))
+#     plt.savefig('hands_3D.png')
+
+#     # ret = fig2data(fig)  # H x W x 4
+#     # plt.close(fig)
+#     # return ret
+
+#     # figx = pickle.load(open('3DHands.fig.pickle', 'rb'))
+#     # print(" Opening Pickle file --- ")
+#     # figx.show() # Show the figure, edit it, etc.!
+#     plt.show()
+
+
+
+
+# def save_model(model, mob_net = False):
+#     model_json = model.to_json()    
+#     if mob_net:
+#         with open('mobnet.json', 'w') as json_file:
+#             json_file.write(model_json)
+#         model.save_weights('mobnet.h5')
+#     else:
+#         with open('model.json', 'w') as json_file:
+#             json_file.write(model_json)
+#         model.save_weights('model.h5')
+#         print('Saved model to Disk! ')
+
+
+# from tensorflow.keras.models import model_from_json
+# from keypointconnector import ConnectKeypointLayer
+# from layers import BatchNormalization, wBiFPNAdd
+# from efficientnet import get_swish, get_dropout
+# from tensorflow.keras import layers
+
+
+# def load_model(dir = None,print_model = False):
+#     if dir == None:
+#         json_file = open('model.json', 'r')
+#         h5model = 'model.h5'
+#     else:
+#         path = os.path.join(dir, 'model.json')
+#         json_file = open(path, 'r')
+#         h5model = os.path.join(dir, 'model.h5')
+
+#     loaded_model_json = json_file.read()
+#     json_file.close()
+#     print(loaded_model_json)
+#     layer_dict = {'ConnectKeypointLayer' : ConnectKeypointLayer,
+#                 'BatchNormalization' : BatchNormalization,
+#                 'wBiFPNAdd' : wBiFPNAdd,
+#                 'swish': get_swish(),
+#                 'FixedDropout' : get_dropout()}
+#     loaded_model = model_from_json(loaded_model_json, layer_dict)
+#     loaded_model.load_weights(h5model)
+#     print('Loaded model ')
+#     if print_model == True:
+#         print(loaded_model.summary())
+
+#     return loaded_model
 
 
 

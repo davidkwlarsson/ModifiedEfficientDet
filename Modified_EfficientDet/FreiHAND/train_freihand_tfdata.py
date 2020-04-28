@@ -46,7 +46,6 @@ from help_functions import plot_acc_loss
 
 from FreiHAND.tfdatagen_frei import tf_generator, benchmark
 
-from keypointconnector import spatial_soft_argmax
 
 
 tf.compat.v1.disable_eager_execution()
@@ -134,22 +133,22 @@ def main():
 
     use_saved_model = False
     train_uv = True
-    train_xyz = True
+    train_xyz = False
     train_full = False
 
 
 
     weighted_bifpn = True
     freeze_backbone = False
-    input_shape = (56,56,3)
-    im_size = (56,56)
+    input_shape = (224,224,3)
+    im_size = (224,224)
     tf.compat.v1.keras.backend.set_session(get_session())
     print(tf.__version__)
     # images, heatmaps, heatmaps2,heatmaps3, coord = get_trainData(dir_path, 100, multi_dim=True)
     batch_size = 16
     nbr_epochs = 10
-    num_samp = 128000
-    num_val_samp = 2240
+    num_samp = 110704
+    num_val_samp = 13024
     train_dataset = tf_generator(dir_path, im_size = im_size,batch_size=batch_size, num_samp=num_samp, data_set = 'training')
     valid_dataset = tf_generator(dir_path, im_size = im_size,batch_size=batch_size, num_samp=num_val_samp, data_set = 'validation')
     traingen = train_dataset.prefetch(batch_size)
@@ -199,19 +198,19 @@ def main():
     # compile model
     print("Compiling model ... \n")
     # losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce}
-    losses = {"uv_coords" : 'mean_squared_error', 'xyz_loss' : 'mean_squared_error' } #, 'xyz_loss' : 'mean_squared_error'}
+    losses = {"uv_coords" : 'mean_squared_error', 'xyz' : 'mean_squared_error' } #, 'xyz_loss' : 'mean_squared_error'}
     # # losses = {"normalsize" : weighted_bce, "size2" : weighted_bce, 'size3':weighted_bce, 'depthmaps' : 'mean_squared_error'}
     # lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0}
     # lossWeights = {"normalsize" : 1.0, "size2" : 1.0, 'size3' : 1.0, 'depthmaps' : 1.0}
     # focalloss = SigmoidFocalCrossEntropy(reduction=Reduction.SUM_OVER_BATCH_SIZE)
     if train_full:
-        lossWeights = {"uv_coords" : 1.0, 'xyz_loss' : 0.1} #, "xyz_loss" : 0.0}
+        lossWeights = {"uv_coords" : 1.0, 'xyz' : 0.1} #, "xyz_loss" : 0.0}
         model.compile(optimizer = Adam(lr=1e-3),
                         loss = losses, loss_weights = lossWeights,
                         )
         # callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
         print("Number of parameters in the model : " ,model.count_params())
-        print(model.summary())
+        # print(model.summary())
         history = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
                         ,steps_per_epoch = num_samp//batch_size, epochs = 1, verbose=1, callbacks = [checkpoint])
         try:
@@ -225,7 +224,7 @@ def main():
         # Freeze the liftpose layers
         alpha = 1.0 # tf.keras.backend.variable(1.0)
         beta = 0.0   # tf.keras.backend.variable(1.0)
-        lossWeights = {"uv_coords" : alpha, 'xyz_loss' : beta} #, "xyz_loss" : 0.0}
+        lossWeights = {"uv_coords" : alpha, 'xyz' : beta} #, "xyz_loss" : 0.0}
         for layer in model.layers[-16:]:
             layer.trainable = False
 
@@ -247,7 +246,7 @@ def main():
         # callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
 
         history_uv = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
-                        ,steps_per_epoch = num_samp//batch_size, epochs = 10, verbose=1, callbacks=[checkpoint])
+                        ,steps_per_epoch = num_samp//batch_size, epochs = 1, verbose=1, callbacks=[checkpoint])
         try:
             plot_acc_loss(history_uv, uv_only=True)
         except:
@@ -263,7 +262,7 @@ def main():
         for layer in model.layers:
             layer.trainable = True
 
-        lossWeights = {"uv_coords" : 0.0, 'xyz_loss' : 1.0}
+        lossWeights = {"uv_coords" : 0.0, 'xyz' : 1.0}
         model.compile(optimizer = Adam(lr=1e-3),
                         loss = losses, loss_weights = lossWeights,
                         )
@@ -281,47 +280,52 @@ def main():
     # save_model(model)
     for layer in model.layers:
             layer.trainable = True
-    # model.save_weights('model.h5')
-    # model.save('saved_model/my_model')
+    model.save_weights('model.h5')
+    model.save('saved_model/my_model')
     
 
-    validgen2 = dataGenerator(dir_path, batch_size= 16, data_set = 'validation')
-    images, targets = next(validgen2)
+    valid_dataset2 = tf_generator(dir_path, im_size = im_size,batch_size=batch_size, num_samp=num_val_samp, data_set = 'validation')
+    validgen2 = valid_dataset2.prefetch(batch_size)
+    # images, targets = next(validgen2)
 
 
-    preds, xyz_pred = model.predict(images, verbose = 1)
-    preds = np.array(preds[:10])
-    xyz_pred = np.array(xyz_pred[:10])
+    preds, xyz_pred = model.predict(validgen2, verbose = 1)
+    preds = np.array(preds)
+    xyz_pred = np.array(xyz_pred)
 
 
-    uv_target, depth_target = targets
-    coord = np.array(uv_target[:10])
-    coord = np.reshape(coord, (10,42))
-    depth_target = np.array(depth_target[:10])
+    # uv_target, xyz_target = targets
+    # coord = np.array(uv_target[:10])
+    # coord = np.reshape(coord, (10,42))
+    # xyz_target = np.array(xyz_target[:10])
 
     # print(np.shape(xyz_pred))
-    print(np.shape(coord), np.shape(preds))
+    print(np.shape(preds), np.shape(xyz_pred))
 
     # get coordinates from predictions
     # coord_preds = heatmaps_to_coord(preds)
-    coord_preds = np.reshape((np.array(preds)+1)*56, (10,42))
-    print('predicted : ', coord_preds[0])
-    print('target : ', coord[0])
+    coord_preds = np.reshape((np.array(preds)+1)*112, (-1,42))
+    # print('predicted : ', coord_preds[0])
+    # print('target : ', coord[0])
     # coord = heatmaps_to_coord(heatmaps)
 
-    plot_predicted_hands_uv(images, coord_preds)
+    # plot_predicted_hands_uv(images, coord_preds)
 
 
-    K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-560:]
-    K_list = K_list[:len(preds)]
-    s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[-560:]
-    s_list = s_list[:len(preds)]
-    xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-560:]
-    xyz_pred = add_relative(xyz_pred, xyz_list, s_list)
+    # K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-3256:-1628]
+    # K_list = K_list[:len(preds)]
+    # s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[-3256:-1628]
+    # s_list = s_list[:len(preds)]
+    # xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-3256:-1628]
+    # xyz_pred = add_relative(xyz_pred, xyz_list, s_list)
     # xyz_pred = add_depth_to_coords(coord_preds, z_pred, K_list, s_list)
     xyz_pred = np.reshape(xyz_pred, (-1, 63))
-    save_coords(xyz_pred, images[0])
-    plot_predicted_coordinates(images, coord_preds, coord)
+    savetxt('pose_cam_xyz_pred.csv',xyz_pred, delimiter=',')
+    savetxt('pose_cam_uv_pred.csv',coord_preds, delimiter=',')
+    
+    
+    # save_coords(xyz_pred, images[0])
+    # plot_predicted_coordinates(images, coord_preds, coord)
 
 
 

@@ -36,12 +36,12 @@ def get_raw_data(dir_path, data_set):
     data_set = data_set.decode('utf8')
     dir_path = dir_path.decode('ascii')
     if data_set == 'training':
-        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[:-560]
+        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[:-3256]
         xyz_list *= 4
         num_samples = len(xyz_list)
-        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[:-560]
+        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[:-3256]
         K_list *= 4
-        s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[:-560]
+        s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[:-3256]
         s_list *= 4
         # indicies = [i for i in range(32000)] + \
         #            [i for i in range(32560, 64560)] + \
@@ -49,12 +49,12 @@ def get_raw_data(dir_path, data_set):
         #            [i for i in range( 97680, 129680)]
         print("Total number of training samples: ", num_samples)#, " and ", len(indicies))
     elif data_set == 'validation':
-        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-560:-100]
+        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-3256:-1628]
         xyz_list *= 4
         num_samples = len(xyz_list)
-        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-560:-100]
+        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-3256:-1628]
         K_list *= 4
-        s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[-560:-100]
+        s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[-3256:-1628]
         s_list *= 4
         # indicies = [i for i in range(32000, 32560)] + \
         #            [i for i in range(64560, 65120)] + \
@@ -62,12 +62,12 @@ def get_raw_data(dir_path, data_set):
         #            [i for i in range(129680,130240)]
         print("Total number of validation samples: ", num_samples)#, " and ", len(indicies))
     elif data_set == 'test':
-        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-100:]
+        xyz_list = json_load(os.path.join(dir_path, 'training_xyz.json'))[-1628:]
         xyz_list *= 4
         num_samples = len(xyz_list)
-        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-100:]
+        K_list = json_load(os.path.join(dir_path, 'training_K.json'))[-1628:]
         K_list *= 4
-        s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[-100:]
+        s_list = json_load(os.path.join(dir_path, 'training_scale.json'))[-1628:]
         s_list *= 4
         # indicies = 0
 
@@ -219,6 +219,14 @@ def gen(num_samp, dir_path, data_set):
         yield uv, xyz
 
 
+def gen_2D(num_samp, dir_path, data_set):
+    #while True:
+    xyz_list, K_list, s_list,num_samples = get_raw_data(dir_path, data_set)
+    for i in range(num_samp):
+        uv = projectPoints(xyz_list[i], K_list[i])/112 - 1
+        yield uv
+
+
 def render_gaussian_heatmap(output_shape, sigma):
     x = [i for i in range(output_shape[1])]
     y = [i for i in range(output_shape[0])]
@@ -278,5 +286,30 @@ def tf_generator(dir_path,im_size, batch_size=16, num_samp = 100, data_set = 'tr
     if data_set == "training":
         dataset = dataset.map(augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
         dataset = dataset.shuffle(batch_size*100, reshuffle_each_iteration=True) 
-    batched_dataset = dataset.repeat().batch(batch_size)
+        batched_dataset = dataset.repeat().batch(batch_size)
+    else:
+        batched_dataset = dataset.batch(batch_size)
+    return batched_dataset
+
+
+
+
+def tf_generator_2D(dir_path,im_size, batch_size=16, num_samp = 100, data_set = 'training'):
+    """ Create generator, right now seperate one for
+        heatmaps and one to read images"""
+    # print(data_set)
+    dataset_uv = tf.data.Dataset.from_generator(
+        gen_2D,
+        output_types=(tf.float32),
+        output_shapes=(tf.TensorShape([21,2])),
+        args=[num_samp, dir_path, data_set])
+    # dataset_hm = dataset_uv.map(map_uv_to_hm, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+    dataset_im = create_image_dataset(dir_path, num_samp, data_set, im_size)
+    dataset = tf.data.Dataset.zip((dataset_im, dataset_uv))
+    if data_set == "training":
+        dataset = dataset.map(augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        dataset = dataset.shuffle(batch_size*100, reshuffle_each_iteration=True) 
+        batched_dataset = dataset.repeat().batch(batch_size)
+    else:
+        batched_dataset = dataset.batch(batch_size)
     return batched_dataset
