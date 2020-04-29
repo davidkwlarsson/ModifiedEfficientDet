@@ -1,192 +1,255 @@
+import getopt
 import os
+import sys
+sys.path.insert(1, '../')
 
 import numpy as np
-from data_generators import get_raw_data
-from generator import projectPoints
-from evaluate import evaluate_result
+from evaluate_result.evaluate import evaluate_result
 import matplotlib.pyplot as plt
 
-from help_functions import get_evalImages
+from utils.help_functions import get_evalImages, get_raw_data
 import matplotlib
-from utils.fh_utils import plot_hand
-
-from plot_3d_skeleton import draw_3d_skeleton
-
-
-def plot_predictions(plot,xyz_abs, xyz, xyz_p, uv, uv_p, K, s,ind):
-    z_root_t = xyz_abs[0, 2]
-    if plot:
-        plt.plot(np.array(z)[10:], np.array(diff)[10:])
-        plt.axvline(z_root_t, color='r', label='correct zroot')
-        plt.axvline(z_root_p, color='b', label='predicted zroot')
-        plt.legend()
-
-    xyz_add_root = np.copy(xyz_p)
-    xyz_add_root[:, 2] = z_root_p + xyz_p[:, 2]
-    xyz_true_root = np.copy(xyz_p)
-    xyz_true_root[:, 2] = z_root_t + xyz_p[:, 2]
-    print('Z pred', z_root_p * s)
-    print('Z true', z_root_t * s)
-    uv_calc_root = np.array(projectPoints(xyz_add_root, K))
-    uv_true_root = np.array(projectPoints(xyz_true_root, K))
-    plt.figure()
-    pred_uv = [uv_p[:, 0], uv_p[:, 1]]
-
-    pred_skeleton = [uv_calc_root[:, 0], uv_calc_root[:, 1]]
-    correct_skeleton = [uv[:, 0], uv[:, 1]]
-    if plot:
-        try:
-            dir_path = "/Users/Sofie/exjobb/freihand/FreiHAND_pub_v2/"
-
-            images = get_evalImages(dir_path, 10, dataset='validation')
-            plt.imshow(images[ind])
-            plt.scatter(uv_true_root[:, 0], uv_true_root[:, 1], marker='x', s=10, label='true root val')
-            plt.scatter(uv_p[:, 0], uv_p[:, 1], marker='+', s=10, label='predicted uv')
-            plt.scatter(uv_c[:, 0], uv_c[:, 1], marker='o', s=10, label='true position')
-            # plt.scatter(uv[:,0],uv[:,1], marker='o')
-            plot_hand(plt, np.transpose(np.array(pred_uv)), order='uv')
-            # plot_hand(plt, np.transpose(np.array(pred_skeleton)), order='uv')
-            plt.legend()
-
-            draw_3d_skeleton(xyz_calc_root * s, (224 * 2, 224 * 2))
-            draw_3d_skeleton(xyz_abs * s, (224 * 2, 224 * 2))
-            plt.show()
-
-        except:
-            print('failed')
-    return uv_calc_root, xyz_calc_root, xyz_abs
+from utils.fh_utils import projectPoints
+from utils.plot_functions import plot_hand
+from utils.plot_3d_skeleton import draw_3d_skeleton
 
 
-def plot_(image, xyz_p, xyz_t, uv_p, uv_t, uv_network):
-    pred_skeleton = [uv_p[:, 0], uv_p[:, 1]]
+def add_z_root(z_root_p, xyz, s, K):
+    '''Adding z root to 3d prediction and projects onto image'''
+    xyz_abs_p = []
+    uv_proj = []
+    for (ind, z) in enumerate(z_root_p):
+        print(z)
+        xyz_p = xyz[ind]
+        xyz_add_root = np.copy(xyz_p)
+        xyz_add_root[:, 2] = z + xyz_p[:, 2]
+        print(xyz_add_root)
 
-    matplotlib.use('TkAgg')
-    draw_3d_skeleton(xyz_p, (224 * 2, 224 * 2))
-    plt.title('Predicted')
-    draw_3d_skeleton(xyz_t, (224 * 2, 224 * 2))
-    plt.title('True')
+        xyz_abs_p.append(xyz_add_root)
+        uv_proj.append(np.array(projectPoints(xyz_add_root, K[ind])))
 
-    plt.figure()
-    plt.imshow(image)
-   # plt.scatter(uv_p[:, 0], uv_p[:, 1], marker='+', s=10, label='predicted uv')
-    plt.scatter(uv_t[:, 0], uv_t[:, 1], marker='o', s=10, label='target uv')
-    plt.scatter(uv_network[:, 0], uv_network[:, 1], marker='o', s=10, label='predicted uv')
-    plot_hand(plt, np.transpose(np.array(pred_skeleton)), order='uv')
-    plt.legend()
-    plt.show()
+    xyz_abs_p = np.array(xyz_abs_p)
 
-def calculate_zroot(xyz_p, uv_p, K, xyz, ind):
+    uv_proj = np.array(uv_proj)
+    print(xyz_abs_p)
+    return xyz_abs_p, uv_proj
+
+
+
+
+def calculate_zroot(xyz, uv, K_list):
     '''Calculate zroot by projecting with different values and take best'''
+    z_root = []
+    z_root_errors = []
+    for i in range(len(xyz)):
+        xyz_p = xyz[i]
+        uv_p = uv[i]
+        K = K_list[i]
+        diff = []
+        z = []
+        n = 0.3
+        for i in range(1,600,1):
+           # m.append([])
+           # std.append([])
+            xyz_tmp = np.copy(xyz_p)
+            xyz_tmp[:, 2] = n + xyz_p[:, 2]
+            uv_tmp = np.array(projectPoints(xyz_tmp, K))
+            z.append(n)
+            n += 0.001
+           # check how good 2D projection is
+            diff.append(np.sum(np.linalg.norm(uv_tmp - uv_p, axis=1)))
+        z_root.append(z[np.argmin(diff)])
+        z_error = np.abs(z[np.argmin(diff)]-xyz_list[i][0,2])
+        z_root_errors.append(z_error)
 
-    diff = []
-    z = []
-    n = 0.3
-    for i in range(1,600,1):
-       # m.append([])
-       # std.append([])
-        xyz_tmp = np.copy(xyz_p)
-        xyz_tmp[:, 2] = n + xyz_p[:, 2]
-        uv_tmp = np.array(projectPoints(xyz_tmp, K))
-        z.append(n)
-        n += 0.001
-       # check how good 2D projection is
-        diff.append(np.sum(np.linalg.norm(uv_tmp - uv_p, axis=1)))
-    z_root = z[np.argmin(diff)]
+    return np.array(z_root), np.array(z_root_errors)
 
-    return z_root
+def write_in_excel_format(result_path, hm):
+    score_path = os.path.join(result_path + 'score/score_root_relative.txt')
+    with open(score_path, 'r') as fo:
+        a = fo.read()
+        a = a.split('\n')
+        print(a)
+        xyz_mean3d = a[0].split(" ")[1]
+        xyz_auc3d = a[1].split(" ")[1]
+        xyz_al_mean3d = a[2].split(" ")[1]
+        xyz_al_auc3d = a[3].split(" ")[1]
+        xy_mean2d = a[4].split(" ")[1]
+        xy_al_mean2d = a[6].split(" ")[1]
+    score_path = os.path.join(result_path + 'score/score_absolute_coordinates.txt')
+    with open(score_path, 'r') as fo:
+        a = fo.read()
+        a = a.split('\n')
+        print(a)
+        a_xyz_mean3d = a[0].split(" ")[1]
+        a_xyz_auc3d = a[1].split(" ")[1]
+        a_xyz_al_mean3d = a[2].split(" ")[1]
+        a_xyz_al_auc3d = a[3].split(" ")[1]
+        a_xy_mean2d = a[4].split(" ")[1]
+        a_xy_al_mean2d = a[6].split(" ")[1]
+    # a = a.split(" ")
+    with open(result_path + 'xyz_loss.csv', 'r') as f:
+        lines = f.read().splitlines()
+        xyz_loss = lines[-1]
+    with open(result_path + 'val_xyz_loss.csv', 'r') as f:
+        lines = f.read().splitlines()
+        val_xyz_loss = lines[-1]
+    with open(result_path + 'loss.csv', 'r') as f:
+        lines = f.read().splitlines()
+        loss = lines[-1]
+    with open(result_path + 'val_loss.csv', 'r') as f:
+        lines = f.read().splitlines()
+        val_loss = lines[-1]
+    if hm:
+        with open(result_path + 'hm_loss.csv', 'r') as f:
+            lines = f.read().splitlines()
+            hm_loss = lines[-1]
+        with open(result_path + 'val_hm_loss.csv', 'r') as f:
+            lines = f.read().splitlines()
+            val_hm_loss = lines[-1]
+    else:
+        with open(result_path + 'uv_loss.csv', 'r') as f:
+            lines = f.read().splitlines()
+            hm_loss = lines[-1]
+        with open(result_path + 'val_uv_loss.csv', 'r') as f:
+            lines = f.read().splitlines()
+            val_hm_loss = lines[-1]
+    score_path = os.path.join(result_path + 'score/to_excell.txt')
+
+    with open(score_path, 'w') as fo:
+        fo.write('%s\n' % xy_mean2d)
+        fo.write('%s\n' % xy_al_mean2d)
+        fo.write('%s\n' % a_xy_mean2d)
+        fo.write('%s\n' % a_xy_al_mean2d)
+        fo.write('%s\n' % xyz_mean3d)
+        fo.write('%s\n' % xyz_al_mean3d)
+        fo.write('%s\n' % xyz_auc3d)
+        fo.write('%s\n' % xyz_al_auc3d)
+        fo.write('%s\n' % a_xyz_mean3d)
+        fo.write('\n\n\n')
+        fo.write('%s\n' % xyz_loss)
+        fo.write('%s\n' % val_xyz_loss)
+        fo.write('%s\n' % hm_loss)
+        fo.write('%s\n' % val_hm_loss)
+        fo.write('\n')
+        fo.write('%s\n' % loss)
+        fo.write('%s\n' % val_loss)
 
 
 if __name__ == '__main__':
-    #Path to dataset
-    freihand_path = "/Users/Sofie/exjobb/freihand/FreiHAND_pub_v2/"
-    #Path to results
-    #result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/whole_pipeline/im-xyz/50e_hm_feat_seperated/'
-    result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/whole_pipeline/im-xyz/50e/'
-   # result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/whole_pipeline/im-xyz/mobilenet50e/'
-    #result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/whole_pipeline/im-xyz/50e_fewer_weights/'
-    xyz_pred_file = 'pose_cam_xyz_pred_.csv'
-    uv_pred_file = 'uv_preds2.csv'
-    # Directory
-    directory1 = "score/score_root_relative"
-    directory2 = "score/score_absolute_coordinates"
-    directory3 = "score/"
+    '''Evaluating results and calculate z-root value
+    score/to_excel.txt here you can just copy and insert to our excel sheet
+    if hm = False: loss file should be in uv_loss.csv and val_uv_loss.csv
+    if got_3d = False: Should evaluate 2D results only
+    
+    '''
 
-    # Parent Directory path
-   # result_path = "/home/User/Documents"
-    # Path
-    save_path1 = os.path.join(result_path, directory1)
-    save_path2 = os.path.join(result_path, directory2)
-    save_path3 = os.path.join(result_path, directory3)
+
+    result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/3d/ED_50e_separated/'
+    result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/hm/ED_30e/'
+    num_images = 5
+    freihand_path = "/Users/Sofie/exjobb/freihand/FreiHAND_pub_v2/"
+
+
+    got_3d = True
+    hm = True
     try:
-        os.mkdir(save_path3)
-    except OSError as error:
-        print(error)
-    images = get_evalImages(freihand_path, 10, dataset='validation')
-    show_bad_zroot = True
-    #Load data from freihand
+        opts, args = getopt.getopt(sys.argv[1:], "p:f:v:", ["path=","freihand_path=","version="])
+    except getopt.GetoptError:
+        print('Require inputs -e <epochs> -t <training_path>')
+        sys.exit(2)
+    for opt, arg in opts:
+        if opt == '-p':
+            result_path = str(arg)
+        elif opt == '-f':
+            freihand_path = str(arg)
+        elif opt == '-v':
+            version = str(arg)
+            if version == '2d':
+                got_3d = False
+
+
+    #Path to dataset
+    #Path to results
+    if got_3d:
+        xyz_pred_file = result_path + 'xyz_pred.csv'
+    uv_pred_file = result_path + 'uv_pred.csv'
+    # Load data from freihand
     xyz_list, K_list, num_samples, s_list = get_raw_data(freihand_path, data_set='validation')
-    # TODO: modify num_samples
-    num_samples = 100
-    xyz_list = np.array(xyz_list)[:num_samples]
+    xyz_list = np.array(xyz_list)
     K_list = np.array(K_list)
     s_list = np.array(s_list)
-    #Load results from network
-    file = result_path+xyz_pred_file
-    pred_xyz_coords = np.reshape(np.loadtxt(file, delimiter=','), (-1, 21, 3))
-    file = result_path + uv_pred_file
-    pred_xy_coords =4* np.reshape(np.loadtxt(file, delimiter=','), (-1, 21, 2))
+    # Load results from network, scale uv to original size
+    if got_3d:
+        pred_xyz = np.reshape(np.loadtxt(xyz_pred_file, delimiter=','), (-1, 21, 3))
+    pred_uv = 4 * np.reshape(np.loadtxt(uv_pred_file, delimiter=','), (-1, 21, 2))
 
-    # Compare relative root result
-    xyz_norm_rel = np.copy(xyz_list)
-    # Modify labels and scale pose to original size
-    uv_target = []
+    # Directory to save result in
+    directory = ["score", "images", "reconstructed"]
+    save_path = ["score/score_root_relative","score/score_absolute_coordinates"]
+
+    for d in directory:
+        try:
+            os.mkdir(os.path.join(result_path, d))
+        except OSError as error:
+            print(error)
+
+    images = get_evalImages(freihand_path, num_images, dataset='validation')
+    show_bad_zroot = True
+    if got_3d:
+        # Compare relative root result
+        target_xyz_rel = np.copy(xyz_list)
+    # Modify labels to relative z and scale pose to original
+    target_uv = []
     for i in range(num_samples):
-        uv_target.append(projectPoints(xyz_list[i], K_list[i]))
-        xyz_norm_rel[i] = xyz_norm_rel[i]
-        xyz_norm_rel[i][:,2]= xyz_norm_rel[i][:,2]-xyz_norm_rel[i][0,2]
-        pred_xyz_coords[i] = pred_xyz_coords[i] * s_list[i]
-
-    uv_target = np.array(uv_target)
-
-    try:
-        os.mkdir(save_path1)
-    except OSError as error:
-        print(error)
-    evaluate_result(save_path1, pred_xyz_coords, xyz_norm_rel, pred_xy_coords, uv_target)
+        target_uv.append(projectPoints(xyz_list[i], K_list[i]))
+        if got_3d:
+            target_xyz_rel[i][:,2] = target_xyz_rel[i][:,2]-target_xyz_rel[i][0,2]
+            pred_xyz[i] = pred_xyz[i] * s_list[i]
+        else:
+            pred_xyz = [0]
+            target_xyz_rel = [0]
+    target_uv = np.array(target_uv)
+    print((target_uv.shape))
+    print((pred_uv.shape))
+    evaluate_result(result_path, save_path[0], pred_xyz, target_xyz_rel, pred_uv, target_uv, got_3d=got_3d)
 
     # Calculate relative root and project onto 2D
-    uv_pred = []
-    calc_bad = 0
-    z_root_errors =[]
-    for i in range(num_samples):
-        # add calculated zroot
-        z_root = calculate_zroot(pred_xyz_coords[i], pred_xy_coords[i], K_list[i], xyz_list[i], i)
-        pred_xyz_coords[i][:,2] = pred_xyz_coords[i][:,2] + z_root
-        z_error = np.abs(z_root-xyz_list[i][0,2])
-        z_root_errors.append(z_error)
-        # project pose onto 2D
-        uv_pred.append(np.array(projectPoints(pred_xyz_coords[i], K_list[i])))
-        if z_error > 0:
-            calc_bad += 1
-            if show_bad_zroot:
-                print(z_error)
-                plot_(images[i], pred_xyz_coords[i],xyz_list[i], uv_pred[i], uv_target[i], pred_xy_coords[i])
-    print(calc_bad)
-    uv_pred = np.array(uv_pred)
-    try:
-        os.mkdir(save_path2)
-    except OSError as error:
-        print(error)
+    if got_3d:
+        try:
+            pred_xyz_abs = np.reshape(np.loadtxt(result_path+'reconstructed/xyz_pred_abs.csv',delimiter=','), (-1,21,3))
+            pred_uv_abs = np.reshape(np.loadtxt(result_path + 'reconstructed/uv_pred_abs.csv', delimiter=','), (-1, 21, 2))
+            z_root_errors = np.loadtxt(result_path + 'reconstructed/z_root_errors.csv', delimiter=',')
+        except:
+            uv_pred = []
+            z_root_errors =[]
+            #TODO: Is this the best way? back project 2d could be an option
+            z_root, z_root_errors = calculate_zroot(pred_xyz, pred_uv, K_list)
+            pred_xyz_abs, pred_uv_abs = add_z_root(z_root, pred_xyz, s_list, K_list)
+            np.savetxt(result_path+'reconstructed/xyz_pred_abs.csv', np.reshape(pred_xyz_abs, (-1,63)), delimiter=',')
+            np.savetxt(result_path+'reconstructed/uv_pred_abs.csv', np.reshape(pred_uv_abs,(-1,42)), delimiter=',')
+            np.savetxt(result_path+'reconstructed/z_root_errors.csv', z_root_errors, delimiter=',')
 
-    evaluate_result(save_path2, pred_xyz_coords, xyz_list, uv_pred, uv_target)
-    score_path = os.path.join(save_path3, 'info.txt')
-    with open(score_path, 'w') as fo:
-        fo.write('Number of z roots off by more than 10 cm: %d of %d, %d percent\n' % (calc_bad,num_samples, (calc_bad/num_samples)))
-        fo.write('Mean of error of zroot: %f \n' % np.mean(z_root_errors))
-        fo.write('Median of error of zroot: %f\n' % np.median(z_root_errors))
-        fo.write('Std of error of zroot: %f\n' % np.std(z_root_errors))
-    matplotlib.use('TkAgg')
-    plt.hist(z_root_errors)
-    plt.title('Distribution of z-root error')
-    plt.savefig(save_path3+'z_error_dist.png')
+    evaluate_result(result_path, save_path[1], pred_xyz_abs, xyz_list, pred_uv_abs, target_uv, got_3d=got_3d)
+    if got_3d:
+        score_path = os.path.join(result_path+'score/z_root_error.txt')
+        calc_bad = np.sum(z_root_errors>0.1)
+        z_root_errors = np.array(z_root_errors)
+        with open(score_path, 'w') as fo:
+            fo.write('Number of z roots off by more than 10 cm: %d of %d, %d percent\n' % (calc_bad,num_samples, (calc_bad/num_samples)))
+            fo.write('Mean of error of zroot: %f \n' % np.mean(z_root_errors))
+            fo.write('Median of error of zroot: %f\n' % np.median(z_root_errors))
+            fo.write('Std of error of zroot: %f\n' % np.std(z_root_errors))
+        #matplotlib.use('TkAgg')
+        plt.figure()
+        plt.hist(z_root_errors)
+        plt.title('Distribution of z-root error')
+        plt.savefig(result_path+'images/z_error_dist.png')
+        write_in_excel_format(result_path, hm)
+
+
+
+
+
+
 
