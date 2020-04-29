@@ -103,7 +103,7 @@ def plot_hand(axis, coords_hw, vis=None, color_fixed=None, linewidth='1', order=
 
     for i in range(21):
         if vis[i] > 0.5:
-            axis.plot(coords_hw[i, 1], coords_hw[i, 0], 'o', color=colors[i, :])
+            axis.plot(coords_hw[i, 1], coords_hw[i, 0], 'o', color=colors[i, :], ms=2)
 
 
 """ Dataset related functions. """

@@ -141,13 +141,15 @@ if __name__ == '__main__':
     score/to_excel.txt here you can just copy and insert to our excel sheet
     if hm = False: loss file should be in uv_loss.csv and val_uv_loss.csv
     if got_3d = False: Should evaluate 2D results only
-    
+    Files that should exist: xyz_pred.csv uv_pred.csv
     '''
 
-
+    #Path to results
     result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/3d/ED_50e_separated/'
     result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/hm/ED_30e/'
     num_images = 5
+    #Path to dataset
+
     freihand_path = "/Users/Sofie/exjobb/freihand/FreiHAND_pub_v2/"
 
 
@@ -169,8 +171,6 @@ if __name__ == '__main__':
                 got_3d = False
 
 
-    #Path to dataset
-    #Path to results
     if got_3d:
         xyz_pred_file = result_path + 'xyz_pred.csv'
     uv_pred_file = result_path + 'uv_pred.csv'
@@ -215,6 +215,7 @@ if __name__ == '__main__':
     evaluate_result(result_path, save_path[0], pred_xyz, target_xyz_rel, pred_uv, target_uv, got_3d=got_3d)
 
     # Calculate relative root and project onto 2D
+    # Only if not done before..
     if got_3d:
         try:
             pred_xyz_abs = np.reshape(np.loadtxt(result_path+'reconstructed/xyz_pred_abs.csv',delimiter=','), (-1,21,3))
@@ -245,6 +246,7 @@ if __name__ == '__main__':
         plt.hist(z_root_errors)
         plt.title('Distribution of z-root error')
         plt.savefig(result_path+'images/z_error_dist.png')
+        # print to file in specific order..
         write_in_excel_format(result_path, hm)
 
 

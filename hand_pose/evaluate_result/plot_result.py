@@ -174,7 +174,7 @@ def plot_result(save3D, save2D, freihand_path, result_path, version, visualize_3
     if version == 'hm':
         hm_pred_file = result_path + 'hm_pred.csv'
         hm_small_pred_file = result_path + 'hm_small_pred.csv'
-        try:
+        try: #because my file is so large..
             hm = np.loadtxt(hm_small_pred_file, delimiter=',')
         except:
             hm = np.loadtxt(hm_pred_file, delimiter=',')

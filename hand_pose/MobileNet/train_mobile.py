@@ -233,8 +233,8 @@ def main():
         preds = model.predict(validgen2, steps=None)
 
         np.savetxt('xyz_pred.csv', preds[0], delimiter=',')
-        np.savetxt('hm_pred.csv', np.reshape(preds[1][0:1000], (-1, 56 * 56)), delimiter=',')
-        np.savetxt('uv_pred.csv', heatmaps_to_coord(preds[1][0:1000]), delimiter=',')
+        np.savetxt('hm_pred.csv', np.reshape(preds[1][0:100], (-1, 56 * 56)), delimiter=',')
+        np.savetxt('uv_pred.csv', heatmaps_to_coord(preds[1][0:100]), delimiter=',')
 
     #TODO shuffle data
 

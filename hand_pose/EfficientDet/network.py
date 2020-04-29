@@ -246,6 +246,7 @@ def project_xyz(xyz):
 
 
 
+
 def efficientdet(phi,batch_size, num_classes=20, weighted_bifpn=False, freeze_bn=False, score_threshold=0.01, full_train=True):
     assert phi in range(7)
     input_size = image_sizes[phi]
