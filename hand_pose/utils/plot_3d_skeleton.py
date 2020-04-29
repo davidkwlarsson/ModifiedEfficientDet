@@ -3,9 +3,8 @@ import numpy as np
 import matplotlib
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from help_functions import get_evalImages
+from utils.help_functions import get_evalImages,get_raw_data
 from utils.fh_utils import *
-from data_generators import get_raw_data
 
 
 color_hand_joints =   [[1.0, 0.0, 0.0],
@@ -17,20 +16,36 @@ color_hand_joints =   [[1.0, 0.0, 0.0],
 
 
 
-def draw_3d_skeleton(pose_cam_xyz, image_size):
+def draw_3d_skeleton(pose_cam_xyz, image_size, subplot=False, ind=0, f=None, z_lim=None, subplot_size=None):
     """
     :param pose_cam_xyz: 21 x 3
     :param image_size: H, W
     :return:
     """
     assert pose_cam_xyz.shape[0] == 21
-    matplotlib.use('TkAgg')
+   # matplotlib.use('TkAgg')
 
-    fig = plt.figure()
-    fig.set_size_inches(float(image_size[0]) / fig.dpi, float(image_size[1]) / fig.dpi, forward=True)
+    if subplot and subplot_size is None:
+        fig = f
+        ax = fig.add_subplot(1, 2, ind, projection='3d')
+    elif subplot and subplot_size is not None:
+        fig = f
+        row = subplot_size[0]
+        col = subplot_size[1]
+        ax = fig.add_subplot(row, col, ind, projection='3d')
 
-    ax = plt.subplot(111, projection='3d')
-    marker_sz = 15
+    else:
+        fig = plt.figure()
+        ax = plt.subplot(111, projection='3d')
+        fig.set_size_inches(float(image_size[0]) / fig.dpi, float(image_size[1]) / fig.dpi, forward=True)
+
+    if ind == 1:
+        ax.set_title('Predicted')
+    elif ind == 2:
+        ax.set_title('True')
+
+
+    marker_sz = 10
     line_wd = 2
    #plt.grid(b=None)
     #plt.axis('off')
@@ -49,6 +64,7 @@ def draw_3d_skeleton(pose_cam_xyz, image_size):
                     linewidth=line_wd)
 
 
+
     ax.set_xlabel('X')
     ax.set_ylabel('Y')
     ax.set_zlabel('Z')
@@ -56,16 +72,25 @@ def draw_3d_skeleton(pose_cam_xyz, image_size):
     ax.set_xlim(-0.08, 0.08)
     ax.set_ylim(-0.08, 0.08)
     #ax.set_zlim(-0.08, 0.08)
+    if z_lim is None:
+        z_lim_min = np.min(pose_cam_xyz[:, 2]) - 0.05
+        z_lim_max = np.max(pose_cam_xyz[:, 2]) + 0.05
+
+    else:
+        z_lim_min = z_lim[0]
+        z_lim_max = z_lim[1]
+    ax.set_zlim(z_lim_min, z_lim_max)
 
 
    # ax.set_zlim(0.5, 0.8)
 # ax.view_init(elev=-85, azim=-75)
     ax.view_init(elev=0, azim=0)
     # pickle.dump(fig, open('3DHands.fig.pickle', 'wb'))
-    plt.savefig('hands_3D.png')
+    #plt.savefig('hands_3D.png')
     # ret = fig2data(fig)  # H x W x 4
     #plt.close(fig)
-    # return ret
+
+    return fig, (z_lim_min,z_lim_max)
 
 if __name__ == '__main__':
     scale = True

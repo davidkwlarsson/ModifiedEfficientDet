@@ -1,84 +1,241 @@
+import os
+import sys
+
+
+sys.path.insert(1, '../')
+
 import matplotlib.pyplot as plt
 import numpy as np
-from data_generators import get_raw_data
-
-from help_functions import get_evalImages,projectPoints
-
+from utils.fh_utils import plot_hand
+from utils.help_functions import get_raw_data, get_evalImages, projectPoints
+from utils.plot_3d_skeleton import draw_3d_skeleton
 
 
 def plot_hm_with_images(hm_pred, uv_true, uv_pred, img, path, ind):
-    #fig = plt.figure()
+    # fig = plt.figure()
     columns = 5
     rows = 2
     n = 0
-    fig, axs = plt.subplots(rows,columns, figsize=(10, 3))
+    fig, axs = plt.subplots(rows, columns, figsize=(10, 3))
 
-    for i in range(1,columns*2,2):
-        axs[0,n].imshow(hm_pred[:, :,n])
-       # axs[i, 0].colorbar()
-        axs[0,n].scatter(uv_true[n,0]/4, uv_true[n,1]/4, c='r', s=2,label='true')
-        axs[0,n].scatter(uv_pred[n,0], uv_pred[n,1], c='b', s=2,label='predicted')
-        axs[1,n].imshow(img)
-        #for i in range(21):
-       # ind_pred = np.unravel_index(np.argmax(hm_pred[ind][:, :, n], axis=None), hm_pred[ind][:, :, n].shape)
-       # ind_true = np.unravel_index(np.argmax(hm_true[ind][:, :, n], axis=None), hm_true[ind][:, :, n].shape)
-        axs[1,n].scatter(uv_true[n,0], uv_true[n,1], c='r', s=2, label='true')
-        axs[1,n].scatter(4 * uv_pred[n,0], 4 * uv_pred[n,1], c='b', s=2, label='predicted')
-      #  print(ind_pred[1], ind_pred[0])
+    for i in range(1, columns * 2, 2):
+        axs[0, n].imshow(hm_pred[:, :, n])
+        axs[0, n].scatter(uv_true[n, 0] / 4, uv_true[n, 1] / 4, c='r', s=2, label='true')
+        axs[0, n].scatter(uv_pred[n, 0], uv_pred[n, 1], c='b', s=2, label='predicted')
+
+        axs[1, n].imshow(img)
+        axs[1, n].scatter(uv_true[n, 0], uv_true[n, 1], c='r', s=2)
+        axs[1, n].scatter(4 * uv_pred[n, 0], 4 * uv_pred[n, 1], c='b', s=2)
         n += 1
-    plt.legend()
-    plt.title('Thumb')
-    #plt.show()
-    plt.savefig(path+'images/hm_'+str(ind)+'.png')
+    axs[0, n-1].legend(loc="upper right",fontsize='small', framealpha=0.3, borderpad=0.1)
+
+    fig.suptitle('Thumb')
+
+    # plt.show()
+    plt.savefig(path + 'images/hm_' + str(ind) + '.png')
     plt.close(fig)
 
 
-def plot_loss(loss, val_loss, path):
-   # plt.figure()
-    x = np.arange(0,len(loss))+1
-    plt.plot(x,loss, label='loss')
-    plt.plot(x,val_loss, '--', label='validation loss')
+def plot_skeleton(uv_preds, uv_trues, images, path):
+    columns = 5
+    rows = 2
+    n = 0
+    fig, axs = plt.subplots(rows, columns, figsize=(10, 3))
+    print(uv_preds.shape)
+    for i in range(1, columns * 2, 2):
+        pred_skeleton = [4 * uv_preds[n][:, 0], 4 * uv_preds[n][:, 1]]
+        true_skeleton = [uv_trues[n][:, 0], uv_trues[n][:, 1]]
+
+        axs[0, n].imshow(images[n])
+
+        plot_hand(axs[0, n], np.transpose(np.array(pred_skeleton)), order='uv')
+
+        axs[1, n].imshow(images[n])
+        plot_hand(axs[1, n], np.transpose(np.array(true_skeleton)), order='uv')
+
+        n += 1
+    fig.suptitle('Predictions first row, true second row')
+    plt.savefig(path + 'images/skeleton.png')
+   # plt.show()
+    plt.close(fig)
+
+
+def plot_3d(pred_xyz, target_xyz, path,s,  visualize_3d=False):
+    for i in range(len(pred_xyz)):
+        fig = plt.figure()
+        fig, z_lim = draw_3d_skeleton(pred_xyz[i] * s[i], (224 * 2, 224 * 2), subplot=True, ind=1, f=fig)
+        #plt.savefig(path + 'images/3d_pred_'+str(i)+'.png')
+        draw_3d_skeleton(target_xyz[i], (224 * 2, 224 * 2), subplot=True, ind=2, f=fig, z_lim=z_lim)
+        plt.savefig(path + 'images/3d_'+str(i)+'.png')
+        if visualize_3d:
+            plt.show()
+
+        plt.close(fig)
+
+
+def plot_3d_multiple(pred_xyz, target_xyz, path,s, images, visualize_3d=False):
+    fig = plt.figure(figsize=(8,10))
+    row = len(pred_xyz)
+    col = 3
+    ind = 1
+    for i in range(row):
+        fig, z_lim = draw_3d_skeleton(pred_xyz[i] * s[i], (224 * 2, 224 * 2), subplot=True, ind=ind,
+                                      f=fig, subplot_size=(row,col))
+        ind += 1
+        draw_3d_skeleton(target_xyz[i], (224 * 2, 224 * 2), subplot=True, ind=ind,
+                         f=fig, z_lim=z_lim, subplot_size=(row, col))
+        ind += 1
+
+        ax = fig.add_subplot(row, col, ind)
+        ax.imshow(images[i])
+        ax.axis('off')
+        ind += 1
+
+    plt.savefig(path + 'images/3d.png')
+    if visualize_3d:
+        plt.show()
+    plt.close(fig)
+
+
+def plot_loss(loss, val_loss, path, title):
+    plt.figure()
+    x = np.arange(0, len(loss)) + 1
+    plt.plot(x, loss, label='loss')
+    plt.plot(x, val_loss, '--', label='validation loss')
     plt.legend()
-   # plt.ylim((0.9, 0.11))
-    plt.title('Heatmap loss, 2D')
-    plt.savefig(path+'loss.png')
+    # plt.ylim((0.9, 0.11))
+    plt.title(title)
+    plt.savefig(path)
     plt.close()
+
 
 # plt.show()
 
+def plot_result(save3D, save2D, freihand_path, result_path, version, visualize_3d=False):
 
-if __name__ == '__main__':
-    freihand_path = "/Users/Sofie/exjobb/freihand/FreiHAND_pub_v2/"
     xyz_list, K_list, num_samples, s_list = get_raw_data(freihand_path, data_set='validation')
     target_uv = []
     for i in range(num_samples):
         target_uv.append(projectPoints(xyz_list[i], K_list[i]))
 
-    nbr_of_images = 1
+    nbr_of_images = 5
     images = get_evalImages(freihand_path, nbr_of_images, dataset='validation')
 
-    result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/hm/ED_30e/'
-    loss_file = result_path+'loss.csv'
-    val_loss_file = result_path+'val_loss.csv'
-    loss = np.loadtxt(loss_file, delimiter=',')
-    val_loss = np.loadtxt(val_loss_file, delimiter=',')
-    plot_loss(loss, val_loss, result_path)
-    hm_pred_file = result_path+'hm_pred.csv'
-    hm_small_pred_file = result_path+'hm_small_pred.csv'
-    uv_pred_file = result_path+'uv_pred.csv'
-    try:
-        hm = np.loadtxt(hm_small_pred_file, delimiter=',')
-    except:
-        hm = np.loadtxt(hm_pred_file, delimiter=',')
-        np.savetxt(hm_small_pred_file, hm[0:21*10], delimiter=',')
+    if version == 'hm':
+        hm_pred_file = result_path + 'hm_pred.csv'
+        hm_small_pred_file = result_path + 'hm_small_pred.csv'
+        try:
+            hm = np.loadtxt(hm_small_pred_file, delimiter=',')
+        except:
+            hm = np.loadtxt(hm_pred_file, delimiter=',')
+            np.savetxt(hm_small_pred_file, hm[0:21 * 10], delimiter=',')
+        pred_hm = np.reshape(hm, (-1, 56, 56, 21))
 
-    pred_hm = np.reshape(hm, (-1, 56, 56, 21))
+    uv_pred_file = result_path + 'uv_pred.csv'
     pred_uv = np.reshape(np.loadtxt(uv_pred_file, delimiter=','), (-1, 21, 2))
 
-    ## plot heatmap for thump
-    for i in range(nbr_of_images):
-        print(i)
-        plot_hm_with_images(pred_hm[i], target_uv[i], pred_uv[i], images[i], result_path,i)
+    ## plot heatmap for thumb
+    if save2D and version=='hm':
+        for i in range(nbr_of_images):
+            plot_hm_with_images(pred_hm[i], target_uv[i], pred_uv[i], images[i], result_path,i)
 
-    # TODO: plot skeleton 2D
-    # TODO: plot skeleton 3D
+    # Plots first five
+    if save2D:
+        plot_skeleton(pred_uv[0:nbr_of_images], target_uv[0:nbr_of_images], images, result_path)
+
+    # TODO: plot skeleton 3D - update with real file name
+    #xyz_pred_file = result_path + 'pose_cam_xyz_pred_.csv'
+    #xyz_tar_file = result_path + 'pose_cam_xyz_target_.csv'
+    xyz_pred_file = result_path + 'xyz_pred.csv'
+    exist_3d = False
+    target_xyz = np.array(xyz_list[:nbr_of_images])
+    target_xyz_rel = np.copy(target_xyz)
+    for i in range(len(target_xyz)):
+        target_xyz_rel[i][:,2] = target_xyz[i][:,2]-target_xyz[i][0,2]
+    try:
+        pred_xyz = np.reshape(np.loadtxt(xyz_pred_file, delimiter=','), (-1, 21, 3))
+        #target_xyz_rel = np.reshape(np.loadtxt(xyz_tar_file, delimiter=','), (-1, 21, 3))
+        exist_3d = True
+        #for i in range(len(target_xyz)):
+        #   target_xyz_rel[i] = target_xyz[i]*s_list[i]
+
+    except:
+        print('No 3d results found')
+    nbr_of_images = 5
+    # TODO: clean
+    if exist_3d:
+        try:
+            loss_file = result_path + 'loss.csv'
+            val_loss_file = result_path + 'val_loss.csv'
+            loss = np.loadtxt(loss_file, delimiter=',')
+            val_loss = np.loadtxt(val_loss_file, delimiter=',')
+            title = 'Total loss'
+            plot_loss(loss, val_loss, result_path + 'loss.png', title)
+            loss_file = result_path + 'xyz_loss.csv'
+            val_loss_file = result_path + 'val_xyz_loss.csv'
+            loss = np.loadtxt(loss_file, delimiter=',')
+            val_loss = np.loadtxt(val_loss_file, delimiter=',')
+            title = '3D loss'
+            plot_loss(loss, val_loss, result_path + 'xyz_loss.png', title)
+            if version == 'hm':
+                #loss_file = result_path + 'hm_loss.csv'
+                #val_loss_file = result_path + 'val_hm_loss.csv'
+                loss_file = result_path + 'normalsize_loss.csv'
+                val_loss_file = result_path + 'val_normalsize_loss.csv'
+                loss = np.loadtxt(loss_file, delimiter=',')
+                val_loss = np.loadtxt(val_loss_file, delimiter=',')
+                title = 'Heatmap loss'
+                plot_loss(loss, val_loss, result_path + 'hm_loss.png', title)
+            else:
+                loss_file = result_path + 'uv_loss.csv'
+                val_loss_file = result_path + 'val_uv_loss.csv'
+                loss = np.loadtxt(loss_file, delimiter=',')
+                val_loss = np.loadtxt(val_loss_file, delimiter=',')
+                title = 'UV loss'
+                plot_loss(loss, val_loss, result_path + 'uv_loss.png', title)
+
+        except:
+            print('No xyz or hm/uv loss file exist')
+
+        if save3D:
+            plot_3d_multiple(pred_xyz[0:nbr_of_images], target_xyz_rel[0:nbr_of_images], result_path, s_list[0:nbr_of_images], images, visualize_3d=visualize_3d)
+            plot_3d(pred_xyz[0:nbr_of_images], target_xyz_rel[0:nbr_of_images], result_path, s_list[0:nbr_of_images], visualize_3d=visualize_3d)
+    else:
+        loss_file = result_path + 'loss.csv'
+        val_loss_file = result_path + 'val_loss.csv'
+        loss = np.loadtxt(loss_file, delimiter=',')
+        val_loss = np.loadtxt(val_loss_file, delimiter=',')
+        title = 'Total loss (2D)'
+        plot_loss(loss, val_loss, result_path + 'loss.png', title)
+
+if __name__ == '__main__':
+    ''' Name of csv files that should exist in path: 
+        xyz_pred.csv - 3D predictions with shape (-1, 21*3)
+        uv_pred.csv - uv predictions with shape (-1, 21*2)
+        hm_pred.csv - hm predictions with shape (-1,56*56)
+        loss.csv - total loss
+        val_loss.csv - total validation loss
+        xyz_loss.csv - 3D loss
+        xyz_val_loss.csv - 3D validation loss
+        if version == 'uv'
+            uv_loss.csv - 2D loss
+            uv_val_loss.csv - 2D validation loss
+        if version == 'hm'
+            hm_loss.csv - heatmap loss
+            hm_val_loss.csv - heatmap validation loss
+    '''
+
+    save3D = True
+    save2D = True
+    visualize_3d = False
+
+    freihand_path = "/Users/Sofie/exjobb/freihand/FreiHAND_pub_v2/"
+    result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/3d/ED_50e_separated/'
+    version = 'hm'
+    dir = 'images/'
+    try:
+        os.mkdir(os.path.join(result_path, dir))
+    except OSError as error:
+        print(error)
+    plot_result(save3D, save2D, freihand_path, result_path,version, visualize_3d=visualize_3d)
+    # TODO: Plot and project absolute result
