@@ -74,7 +74,7 @@ def get_raw_data(dir_path, data_set='training'):
         lim_right = int(num_tot_samples * 0.95)
     elif data_set == 'test':
         lim_left = int(num_tot_samples * 0.95)
-        lim_right = -1
+        lim_right = num_tot_samples
 
     elif data_set == 'evaluation':
         # TODO
