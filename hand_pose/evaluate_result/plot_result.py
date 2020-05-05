@@ -110,24 +110,34 @@ def plot_skeleton(uv_preds, uv_trues, images, path):
     plt.close(fig)
 
 
-def plot_3d(pred_xyz, target_xyz, path,s,  visualize_3d=False):
+def plot_3d(pred_xyz, target_xyz, path,s,  visualize_3d=False, reconstructed=False, test=''):
+    if reconstructed:
+        save_name = path + 'images'+test+'/3d_abs_'
+    else:
+        save_name = path + 'images'+test+'/3d_'
+
     for i in range(len(pred_xyz)):
         fig = plt.figure()
         fig, z_lim = draw_3d_skeleton(pred_xyz[i] * s[i], (224 * 2, 224 * 2), subplot=True, ind=1, f=fig)
         #plt.savefig(path + 'images/3d_pred_'+str(i)+'.png')
         draw_3d_skeleton(target_xyz[i], (224 * 2, 224 * 2), subplot=True, ind=2, f=fig, z_lim=z_lim)
-        plt.savefig(path + 'images/3d_'+str(i)+'.png')
+        plt.savefig(save_name+str(i)+'.png')
         if visualize_3d:
             plt.show()
 
         plt.close(fig)
 
 
-def plot_3d_multiple(pred_xyz, target_xyz, path,s, images, visualize_3d=False):
+def plot_3d_multiple(pred_xyz, target_xyz, path,s, images, visualize_3d=False, reconstructed=False, test=''):
     fig = plt.figure(figsize=(8,10))
     row = len(pred_xyz)
     col = 3
     ind = 1
+    if reconstructed:
+        save_name = path + 'images'+test+'/3d_abs.png'
+    else:
+        save_name = path + 'images'+test+'/3d.png'
+
     for i in range(row):
         fig, z_lim = draw_3d_skeleton(pred_xyz[i] * s[i], (224 * 2, 224 * 2), subplot=True, ind=ind,
                                       f=fig, subplot_size=(row,col))
@@ -141,7 +151,7 @@ def plot_3d_multiple(pred_xyz, target_xyz, path,s, images, visualize_3d=False):
         ax.axis('off')
         ind += 1
 
-    plt.savefig(path + 'images/3d.png')
+    plt.savefig(save_name)
     if visualize_3d:
         plt.show()
     plt.close(fig)
@@ -153,7 +163,8 @@ def plot_loss(loss, val_loss, path, title):
     plt.plot(x, loss, label='loss')
     plt.plot(x, val_loss, '--', label='validation loss')
     plt.legend()
-    # plt.ylim((0.9, 0.11))
+    if title == 'Total loss':
+        plt.ylim((0.1, 0.55))
     plt.title(title)
     plt.savefig(path)
     plt.close()
@@ -162,18 +173,21 @@ def plot_loss(loss, val_loss, path, title):
 # plt.show()
 
 def plot_result(save3D, save2D, freihand_path, result_path, version, visualize_3d=False):
-
-    xyz_list, K_list, num_samples, s_list = get_raw_data(freihand_path, data_set='validation')
+    test = ""
+    dataset = 'validation'
+    if dataset == 'test':
+        test = '_test'
+    xyz_list, K_list, num_samples, s_list = get_raw_data(freihand_path, data_set=dataset)
     target_uv = []
     for i in range(num_samples):
         target_uv.append(projectPoints(xyz_list[i], K_list[i]))
 
     nbr_of_images = 5
-    images = get_evalImages(freihand_path, nbr_of_images, dataset='validation')
+    images = get_evalImages(freihand_path, nbr_of_images, dataset=dataset)
 
     if version == 'hm':
-        hm_pred_file = result_path + 'hm_pred.csv'
-        hm_small_pred_file = result_path + 'hm_small_pred.csv'
+        hm_pred_file = result_path + 'hm_pred'+test+'.csv'
+        hm_small_pred_file = result_path + 'hm_small_pred'+test+'.csv'
         try: #because my file is so large..
             hm = np.loadtxt(hm_small_pred_file, delimiter=',')
         except:
@@ -182,36 +196,38 @@ def plot_result(save3D, save2D, freihand_path, result_path, version, visualize_3
             np.savetxt(hm_small_pred_file, hm[0:21 * 10], delimiter=',')
         pred_hm = np.reshape(hm, (-1, 56, 56, 21))
 
-    uv_pred_file = result_path + 'uv_pred.csv'
+    uv_pred_file = result_path + 'uv_pred'+test+'.csv'
     pred_uv = np.reshape(np.loadtxt(uv_pred_file, delimiter=','), (-1, 21, 2))
     print(pred_uv.shape)
     rec = True
     try:
-        uv_pred_proj_file = result_path + 'reconstructed/uv_pred_abs.csv'
+        uv_pred_proj_file = result_path + 'reconstructed'+test+'/uv_pred_abs.csv'
         pred_uv_abs = np.reshape(np.loadtxt(uv_pred_proj_file, delimiter=','), (-1, 21, 2))
     except:
         print("reconstruction does not exist")
         rec = False
     ## plot heatmap for thumb
-    if save2D and version=='hm':
-        for i in range(nbr_of_images):
-            plot_hm_with_images(pred_hm[i], target_uv[i], pred_uv[i], images[i], result_path,i)
-
+    try:
+        if save2D and version=='hm':
+            for i in range(nbr_of_images-5,nbr_of_images):
+                plot_hm_with_images(pred_hm[i], target_uv[i], pred_uv[i], images[i], result_path,i)
+    except:
+        print('ERROR: to few heatmaps saved')
     # Plots first five
     if save2D:
-        plot_skeleton(pred_uv[0:nbr_of_images], target_uv[0:nbr_of_images], images,result_path + 'images/skeleton.png')
+        plot_skeleton(pred_uv[0:nbr_of_images], target_uv[0:nbr_of_images], images,result_path + 'images'+test+'/skeleton.png')
         if rec:
-            plot_skeleton_all(pred_uv[0:nbr_of_images],pred_uv_abs[0:nbr_of_images], target_uv[0:nbr_of_images], images, result_path+ 'images/skeleton_reprojected.png')
+            plot_skeleton_all(pred_uv[0:nbr_of_images],pred_uv_abs[0:nbr_of_images], target_uv[0:nbr_of_images], images, result_path+ 'images'+test+'/skeleton_reprojected.png')
 
     # TODO: plot skeleton 3D - update with real file name
     #xyz_pred_file = result_path + 'pose_cam_xyz_pred_.csv'
     #xyz_tar_file = result_path + 'pose_cam_xyz_target_.csv'
-    xyz_pred_file = result_path + 'xyz_pred.csv'
-    xyz_pred_abs_file = result_path + 'reconstructed/xyz_pred_abs.csv'
+    xyz_pred_file = result_path + 'xyz_pred'+test+'.csv'
+    xyz_pred_abs_file = result_path + 'reconstructed'+test+'/xyz_pred_abs.csv'
     exist_3d = False
     target_xyz = np.array(xyz_list[:nbr_of_images])
     target_xyz_rel = np.copy(target_xyz)
-    for i in range(len(target_xyz_rel)):
+    for i in range(len(target_xyz_rel)-5,len(target_xyz_rel)):
         target_xyz_rel[i][:,2] = target_xyz_rel[i][:,2]-target_xyz_rel[i][0,2]
     try:
         pred_xyz = np.reshape(np.loadtxt(xyz_pred_file, delimiter=','), (-1, 21, 3))
@@ -225,7 +241,7 @@ def plot_result(save3D, save2D, freihand_path, result_path, version, visualize_3
 
     except:
         print('No 3d results found')
-    nbr_of_images = 5
+   # nbr_of_images = 5
     # TODO: clean
     if exist_3d:
         try:
@@ -260,13 +276,13 @@ def plot_result(save3D, save2D, freihand_path, result_path, version, visualize_3
             print('No xyz or hm/uv loss file exist')
 
         if save3D:
-            plot_3d_multiple(pred_xyz[0:nbr_of_images], target_xyz_rel[0:nbr_of_images], result_path, s_list[0:nbr_of_images], images, visualize_3d=visualize_3d)
-            plot_3d(pred_xyz[0:nbr_of_images], target_xyz_rel[0:nbr_of_images], result_path, s_list[0:nbr_of_images], visualize_3d=visualize_3d)
+            plot_3d_multiple(pred_xyz[nbr_of_images-5:nbr_of_images], target_xyz_rel[nbr_of_images-5:nbr_of_images], result_path, s_list[nbr_of_images-5:nbr_of_images], images[nbr_of_images-5:nbr_of_images], visualize_3d=visualize_3d, test=test)
+            plot_3d(pred_xyz[nbr_of_images-5:nbr_of_images], target_xyz_rel[nbr_of_images-5:nbr_of_images], result_path, s_list[nbr_of_images-5:nbr_of_images], visualize_3d=visualize_3d, test=test)
             if rec:
-                plot_3d_multiple(pred_xyz_abs[0:nbr_of_images], target_xyz_rel[0:nbr_of_images], result_path,
-                                 s_list[0:nbr_of_images], images, visualize_3d=visualize_3d)
-                plot_3d(pred_xyz_abs[0:nbr_of_images], target_xyz_rel[0:nbr_of_images], result_path,
-                        s_list[0:nbr_of_images], visualize_3d=visualize_3d)
+                plot_3d_multiple(pred_xyz_abs[nbr_of_images-5:nbr_of_images], target_xyz[nbr_of_images-5:nbr_of_images], result_path,
+                                 np.ones(nbr_of_images), images[nbr_of_images-5:nbr_of_images], visualize_3d=visualize_3d, reconstructed=True, test=test)
+                plot_3d(pred_xyz_abs[nbr_of_images-5:nbr_of_images], target_xyz_rel[nbr_of_images-5:nbr_of_images], result_path,
+                        np.ones(nbr_of_images), visualize_3d=visualize_3d, reconstructed=True, test=test)
     else:
         loss_file = result_path + 'loss.csv'
         val_loss_file = result_path + 'val_loss.csv'
@@ -292,13 +308,16 @@ if __name__ == '__main__':
             hm_val_loss.csv - heatmap validation loss
     '''
 
-    save3D = False
+    save3D = True
     save2D = True
     visualize_3d = False
 
     freihand_path = "/Users/Sofie/exjobb/freihand/FreiHAND_pub_v2/"
     result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/3d/ED_50e_separated/'
-   # result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/hm/ED_30e/'
+    result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/3d/ED_50e_shuffled/'
+    result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/3d/ED_50e_112/'
+    #result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/3d/MN_50e/'
+# result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/hm/ED_30e/'
     try:
         opts, args = getopt.getopt(sys.argv[1:], "p:", ["path="])
     except getopt.GetoptError:

@@ -19,11 +19,11 @@ def add_z_root(z_root_p, xyz, s, K):
     xyz_abs_p = []
     uv_proj = []
     for (ind, z) in enumerate(z_root_p):
-        print(z)
+       # print(z)
         xyz_p = xyz[ind]
         xyz_add_root = np.copy(xyz_p)
         xyz_add_root[:, 2] = z + xyz_p[:, 2]
-        print(xyz_add_root)
+       # print(xyz_add_root)
 
         xyz_abs_p.append(xyz_add_root)
         uv_proj.append(np.array(projectPoints(xyz_add_root, K[ind])))
@@ -31,7 +31,7 @@ def add_z_root(z_root_p, xyz, s, K):
     xyz_abs_p = np.array(xyz_abs_p)
 
     uv_proj = np.array(uv_proj)
-    print(xyz_abs_p)
+  #  print(xyz_abs_p)
     return xyz_abs_p, uv_proj
 
 
@@ -64,8 +64,8 @@ def calculate_zroot(xyz, uv, K_list):
 
     return np.array(z_root), np.array(z_root_errors)
 
-def write_in_excel_format(result_path, hm):
-    score_path = os.path.join(result_path + 'score/score_root_relative.txt')
+def write_in_excel_format(result_path, hm, test):
+    score_path = os.path.join(result_path + 'score'+test+'/score_root_relative.txt')
     with open(score_path, 'r') as fo:
         a = fo.read()
         a = a.split('\n')
@@ -76,7 +76,7 @@ def write_in_excel_format(result_path, hm):
         xyz_al_auc3d = a[3].split(" ")[1]
         xy_mean2d = a[4].split(" ")[1]
         xy_al_mean2d = a[6].split(" ")[1]
-    score_path = os.path.join(result_path + 'score/score_absolute_coordinates.txt')
+    score_path = os.path.join(result_path + 'score'+test+'/score_absolute_coordinates.txt')
     with open(score_path, 'r') as fo:
         a = fo.read()
         a = a.split('\n')
@@ -114,9 +114,10 @@ def write_in_excel_format(result_path, hm):
         with open(result_path + 'val_uv_loss.csv', 'r') as f:
             lines = f.read().splitlines()
             val_hm_loss = lines[-1]
-    score_path = os.path.join(result_path + 'score/to_excell.txt')
+    score_path = os.path.join(result_path + 'score'+test+'/to_excell.txt')
 
     with open(score_path, 'w') as fo:
+
         fo.write('%s\n' % xy_mean2d)
         fo.write('%s\n' % xy_al_mean2d)
         fo.write('%s\n' % a_xy_mean2d)
@@ -146,12 +147,19 @@ if __name__ == '__main__':
 
     #Path to results
     result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/3d/ED_50e_separated/'
-    result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/hm/ED_30e/'
-    num_images = 5
+    result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/3d/ED_50e_shuffled/'
+    result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/3d/ED_50e_112/'
+    #result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/3d/MN_50e/'
+    #result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/hm/MN_30e/'
+
+    #num_images = 5
     #Path to dataset
-
+#todo run this code ande re-run predictions for mobnet
     freihand_path = "/Users/Sofie/exjobb/freihand/FreiHAND_pub_v2/"
-
+    test = ""
+    dataset = 'validation'
+    if dataset == 'test':
+        test = '_test'
 
     got_3d = True
     hm = True
@@ -172,10 +180,10 @@ if __name__ == '__main__':
 
 
     if got_3d:
-        xyz_pred_file = result_path + 'xyz_pred.csv'
-    uv_pred_file = result_path + 'uv_pred.csv'
+        xyz_pred_file = result_path + 'xyz_pred'+test+'.csv'
+    uv_pred_file = result_path + 'uv_pred'+test+'.csv'
     # Load data from freihand
-    xyz_list, K_list, num_samples, s_list = get_raw_data(freihand_path, data_set='validation')
+    xyz_list, K_list, num_samples, s_list = get_raw_data(freihand_path, data_set=dataset)
     xyz_list = np.array(xyz_list)
     K_list = np.array(K_list)
     s_list = np.array(s_list)
@@ -184,17 +192,20 @@ if __name__ == '__main__':
         pred_xyz = np.reshape(np.loadtxt(xyz_pred_file, delimiter=','), (-1, 21, 3))
     pred_uv = 4 * np.reshape(np.loadtxt(uv_pred_file, delimiter=','), (-1, 21, 2))
 
+    print(s_list.shape)
+    print(xyz_list.shape)
+    print(pred_xyz.shape)
     # Directory to save result in
-    directory = ["score", "images", "reconstructed"]
-    save_path = ["score/score_root_relative","score/score_absolute_coordinates"]
+    directory = ["score"+test, "images"+test, "reconstructed"+test]
+    save_path = ["score"+test+"/score_root_relative","score"+test+"/score_absolute_coordinates"]
 
     for d in directory:
         try:
             os.mkdir(os.path.join(result_path, d))
         except OSError as error:
             print(error)
-
-    images = get_evalImages(freihand_path, num_images, dataset='validation')
+    num_images = 2027
+    images = get_evalImages(freihand_path, num_images, dataset=dataset)
     show_bad_zroot = True
     if got_3d:
         # Compare relative root result
@@ -209,31 +220,45 @@ if __name__ == '__main__':
         else:
             pred_xyz = [0]
             target_xyz_rel = [0]
+    matplotlib.use('TkAgg')
+    fig = plt.figure()
+
+    fig, z_lim = draw_3d_skeleton(target_xyz_rel[2026], (224 * 2, 224 * 2), subplot=True, ind=1,f=fig)
+
+    draw_3d_skeleton(pred_xyz[2026], (224 * 2, 224 * 2), subplot=True, ind=2, f=fig, z_lim=z_lim)
+    fig = plt.figure()
+    images=np.array(images)
+    print(images.shape)
+    plt.imshow(images[2026])
+    plt.show()
     target_uv = np.array(target_uv)
     print((target_uv.shape))
     print((pred_uv.shape))
-    evaluate_result(result_path, save_path[0], pred_xyz, target_xyz_rel, pred_uv, target_uv, got_3d=got_3d)
+    evaluate_result(result_path, save_path[0], pred_xyz, target_xyz_rel, pred_uv, target_uv[:len(pred_uv)], got_3d=got_3d)
 
     # Calculate relative root and project onto 2D
     # Only if not done before..
+    pred_xyz_abs = []
+
     if got_3d:
         try:
-            pred_xyz_abs = np.reshape(np.loadtxt(result_path+'reconstructed/xyz_pred_abs.csv',delimiter=','), (-1,21,3))
-            pred_uv_abs = np.reshape(np.loadtxt(result_path + 'reconstructed/uv_pred_abs.csv', delimiter=','), (-1, 21, 2))
-            z_root_errors = np.loadtxt(result_path + 'reconstructed/z_root_errors.csv', delimiter=',')
+            pred_xyz_abs = np.reshape(np.loadtxt(result_path+'reconstructed'+test+'/xyz_pred_abs.csv',delimiter=','), (-1,21,3))
+            pred_uv_abs = np.reshape(np.loadtxt(result_path + 'reconstructed'+test+'/uv_pred_abs.csv', delimiter=','), (-1, 21, 2))
+            z_root_errors = np.loadtxt(result_path + 'reconstructed'+test+'/z_root_errors.csv', delimiter=',')
         except:
             uv_pred = []
             z_root_errors =[]
             #TODO: Is this the best way? back project 2d could be an option
-            z_root, z_root_errors = calculate_zroot(pred_xyz, pred_uv, K_list)
+            z_root, z_root_errors = calculate_zroot(pred_xyz[:len(pred_uv)], pred_uv, K_list)
             pred_xyz_abs, pred_uv_abs = add_z_root(z_root, pred_xyz, s_list, K_list)
-            np.savetxt(result_path+'reconstructed/xyz_pred_abs.csv', np.reshape(pred_xyz_abs, (-1,63)), delimiter=',')
-            np.savetxt(result_path+'reconstructed/uv_pred_abs.csv', np.reshape(pred_uv_abs,(-1,42)), delimiter=',')
-            np.savetxt(result_path+'reconstructed/z_root_errors.csv', z_root_errors, delimiter=',')
-
-    evaluate_result(result_path, save_path[1], pred_xyz_abs, xyz_list, pred_uv_abs, target_uv, got_3d=got_3d)
+            np.savetxt(result_path+'reconstructed'+test+'/xyz_pred_abs.csv', np.reshape(pred_xyz_abs, (-1,63)), delimiter=',')
+            np.savetxt(result_path+'reconstructed'+test+'/uv_pred_abs.csv', np.reshape(pred_uv_abs,(-1,42)), delimiter=',')
+            np.savetxt(result_path+'reconstructed'+test+'/z_root_errors.csv', z_root_errors, delimiter=',')
+        print(len(pred_xyz_abs))
+        print(len(xyz_list))
+        evaluate_result(result_path, save_path[1], pred_xyz_abs, xyz_list[:len(pred_xyz_abs)], pred_uv_abs, target_uv[:len(pred_uv_abs)], got_3d=got_3d)
     if got_3d:
-        score_path = os.path.join(result_path+'score/z_root_error.txt')
+        score_path = os.path.join(result_path+'score'+test+'/z_root_error.txt')
         calc_bad = np.sum(z_root_errors>0.1)
         z_root_errors = np.array(z_root_errors)
         with open(score_path, 'w') as fo:
@@ -245,11 +270,11 @@ if __name__ == '__main__':
         plt.figure()
         plt.hist(z_root_errors)
         plt.title('Distribution of z-root error')
-        plt.savefig(result_path+'images/z_error_dist.png')
+        plt.savefig(result_path+'images'+test+'/z_error_dist.png')
         # print to file in specific order..
-        write_in_excel_format(result_path, hm)
+        write_in_excel_format(result_path, hm, test)
 
-
+    # KÖR INTE?
 
 
 
