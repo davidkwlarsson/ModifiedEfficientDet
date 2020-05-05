@@ -144,8 +144,8 @@ def main():
     num_test_samp = int(tot_num_samp * 0.05)
 
     # 2D is pretrained so hm-loss is okay and can be trained together with 3D
-    full_train = True
-    train_hm = False  # 2D is pretrained
+    full_train = True # if false only train hm part
+    only_predict = True # Use existing weights
 
     traingen = tf_generator(dir_path, dataset, batch_size=batch_size, full_train=full_train)
     validgen = tf_generator(dir_path, 'validation', batch_size=batch_size, full_train=full_train)
@@ -164,15 +164,33 @@ def main():
   # print("Number of images: %s and heatmaps: %s\n" % (len(images), len(heatmaps)))
     model = efficientdet_mobnet(phi, input_shape=input_shape, weighted_bifpn=weighted_bifpn,
                                 freeze_bn=freeze_backbone, full_train=full_train)
+    if only_predict and full_train:
+        model.load_weights('xyz_weights_mobnet_cp.h5', by_name=True)
+    elif only_predict and not full_train:
+        model.load_weights('hm_pre_train_mobnet.h5', by_name=True)
+    elif full_train: #load pre-trained weights
+        model.load_weights('hm_pre_train_mobnet.h5', by_name=True)
+    if only_predict and full_train:
+        losses = {"xyz": 'mse', 'hm': weighted_bce}
+        lossWeights = {"xyz": 1, 'hm': 1}
 
-    #if full_train: #load pre-trained weights
-      #  model.load_weights('hm_weights_mobnet.h5', by_name=True)
+        print("Compiling model ... \n")
+        model.compile(optimizer=Adam(lr=1e-3),
+                      loss=losses, loss_weights=lossWeights,
+                      )
+    elif only_predict and not full_train:
+        losses = {'hm': weighted_bce}
+        lossWeights = {'hm': 1}
 
-    if full_train:
+        print("Compiling model ... \n")
+        model.compile(optimizer=Adam(lr=1e-3),
+                      loss=losses, loss_weights=lossWeights,
+                      )
+    elif full_train:
         losses = {"xyz": 'mse', 'hm': weighted_bce}
         lossWeights = {"xyz": 1, 'hm': 1}
         checkpoint = tf.keras.callbacks.ModelCheckpoint(
-            filepath='xyz_weights_cp.h5',
+            filepath='xyz_weights_mobnet_cp.h5',
             # Path where to save the model
             # The two parameters below mean that we will overwrite
             # the current checkpoint if and only if
@@ -183,7 +201,7 @@ def main():
             verbose=1)
         print("Compiling model ... \n")
         model.compile(optimizer=Adam(lr=1e-3),
-                      loss=losses, loss_weights=lossWeights,
+                      loss=losses, loss_weights=lossWeights, metrics=['accuracy']
                       )
         callbacks =[checkpoint]
         print("Number of parameters in the model : ", model.count_params())
@@ -193,6 +211,7 @@ def main():
                             callbacks=callbacks)
 
         model.save_weights("xyz_weights_mobnet.h5")
+        save_loss(history)
     else:
         losses = {'hm': weighted_bce}  # , "depth": 'mean_squared_error'}
         checkpoint = tf.keras.callbacks.ModelCheckpoint(
@@ -209,10 +228,10 @@ def main():
         print('train hm only')
         # Freeze the liftpose layers
 
-        lossWeights = { 'hm': 1}  # , "xyz_loss" : 0.0}
+        lossWeights = {'hm': 1}  # , "xyz_loss" : 0.0}
 
         model.compile(optimizer=Adam(lr=1e-3),
-                      loss=losses, loss_weights=lossWeights,
+                      loss=losses, loss_weights=lossWeights, metrics=['accuracy']
                       )
         print(model.summary())
         print('check so freeze is correct')
@@ -220,23 +239,35 @@ def main():
         callbacks =[checkpoint]
 
         history = model.fit(traingen, validation_data=validgen, validation_steps=num_val_samp // batch_size
-                               , steps_per_epoch=num_train_samp // batch_size, epochs=nbr_epochs, verbose=1,
+                               ,steps_per_epoch=num_train_samp // batch_size, epochs=nbr_epochs, verbose=1,
                                callbacks=callbacks)
         model.save_weights("hm_weights_mobnet.h5")
 
 
-    save_loss(history)
+        save_loss(history)
     model.save('saved_model/my_model')
     save_result=True
     if save_result:
         validgen2 = tf_generator(dir_path, 'validation', batch_size=batch_size, full_train=full_train)
-        preds = model.predict(validgen2, steps=None)
+        validgen3 = tf_generator(dir_path, 'test', batch_size=batch_size, full_train=full_train)
 
-        np.savetxt('xyz_pred.csv', preds[0], delimiter=',')
-        np.savetxt('hm_pred.csv', np.reshape(preds[1][0:100], (-1, 56 * 56)), delimiter=',')
-        np.savetxt('uv_pred.csv', heatmaps_to_coord(preds[1][0:100]), delimiter=',')
+        preds = model.predict(validgen2, steps=None)
+        preds_test = model.predict(validgen3, steps=None)
+        if full_train:
+            np.savetxt('xyz_pred.csv', preds[0], delimiter=',')
+            np.savetxt('hm_pred_m.csv', np.reshape(preds[1][0:100], (-1, 56 * 56)), delimiter=',')
+            np.savetxt('uv_pred_m.csv', heatmaps_to_coord(preds[1]), delimiter=',')
+            np.savetxt('xyz_pred_test.csv', preds_test[0], delimiter=',')
+            np.savetxt('hm_pred_m_test.csv', np.reshape(preds_test[1][0:100], (-1, 56 * 56)), delimiter=',')
+            np.savetxt('uv_pred_m_test.csv', heatmaps_to_coord(preds_test[1]), delimiter=',')
+
+        else:
+            #np.savetxt('hm_pred_m.csv', np.reshape(preds[0:1000], (-1, 56 * 56)), delimiter=',')
+            np.savetxt('uv_pred_m.csv', heatmaps_to_coord(preds), delimiter=',')
+            np.savetxt('uv_pred_m_test.csv', heatmaps_to_coord(preds_test), delimiter=',')
 
     #TODO shuffle data
+    # Run hetmap with only heatmap settings... never predicted
 
 
 if __name__ == '__main__':

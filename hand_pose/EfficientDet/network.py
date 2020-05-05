@@ -90,9 +90,14 @@ def build_BiFPN(features, num_channels, id, freeze_bn=False):
     return P3_out, P4_out, P5_out#, P6_out , P7_out
 
 
-def build_wBiFPN(features, num_channels, id, freeze_bn=False):
+def build_wBiFPN(features, num_channels, id, freeze_bn=False, im_size=224):
     if id == 0:
-        _, _, C3, C4, C5 = features
+        if im_size == 112:
+            _, C3, C4, C5, _ = features
+        elif im_size == 56:
+            C3, C4, C5, _, _ = features
+        else:
+            _, _, C3, C4, C5 = features
         P3_in = ConvBlock(num_channels, kernel_size=1, strides=1, freeze_bn=freeze_bn, name='BiFPN_{}_P3'.format(id))(
             C3)
         P4_in = ConvBlock(num_channels, kernel_size=1, strides=1, freeze_bn=freeze_bn, name='BiFPN_{}_P4'.format(id))(
@@ -247,10 +252,10 @@ def project_xyz(xyz):
 
 
 
-def efficientdet(phi,batch_size, num_classes=20, weighted_bifpn=False, freeze_bn=False, score_threshold=0.01, full_train=True):
+def efficientdet(phi,input_shape_img,batch_size, num_classes=20, weighted_bifpn=False, freeze_bn=False, score_threshold=0.01, full_train=True):
     assert phi in range(7)
     input_size = image_sizes[phi]
-    input_shape_img = (224, 224, 3)
+  #  input_shape_img = (224, 224, 3)
     image_input = layers.Input(input_shape_img)
     w_bifpn = w_bifpns[phi]
     d_bifpn = 2 + phi
@@ -263,10 +268,10 @@ def efficientdet(phi,batch_size, num_classes=20, weighted_bifpn=False, freeze_bn
 
     if weighted_bifpn:
         for i in range(d_bifpn):
-            features = build_wBiFPN(features, w_bifpn, i, freeze_bn=freeze_bn)
+            features = build_wBiFPN(features, w_bifpn, i, freeze_bn=freeze_bn, im_size=input_shape_img[0])
     else:
         for i in range(d_bifpn):
-            features = build_BiFPN(features, w_bifpn, i, freeze_bn=freeze_bn)
+            features = build_BiFPN(features, w_bifpn, i, freeze_bn=freeze_bn, im_size=input_shape_img[0])
 
     # regress_head = build_regress_head(w_head, d_head)
     # print("shape of output from final BiFPN layer: ", features[0].shape, features[1].shape, features[2].shape)

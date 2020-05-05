@@ -71,7 +71,7 @@ class EvalUtil:
         for part_id in range(self.num_kp):
             # mean/median error
             mean, median = self._get_epe(part_id)
-
+           # print(mean)
             if mean is None:
                 # there was no valid measurement for this keypoint
                 continue
@@ -90,7 +90,15 @@ class EvalUtil:
             auc = np.trapz(pck_curve, thresholds)
             auc /= norm_factor
             auc_all.append(auc)
+        print(epe_mean_all)
+        print('worst prediction (per keypoint):')
+        print(np.argmax(self.data, axis=1))
+        print('Best keypoint:')
+        print(np.argmax(epe_mean_all))
 
+    # print(np.shape(self.data))
+
+        #print(self.data[np.argmax(self.data)])
         epe_mean_all = np.mean(np.array(epe_mean_all))
         epe_median_all = np.mean(np.array(epe_median_all))
         auc_all = np.mean(np.array(auc_all))

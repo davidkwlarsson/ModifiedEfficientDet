@@ -81,7 +81,8 @@ def render_gaussian_heatmap(output_shape, sigma):
     return heatmap
 
 
-def create_image_dataset(dir_path, num_samples, dataset):
+def create_image_dataset(dir_path, num_samples, dataset, im_size):
+    rows,cols, dim = im_size
     image_path = ''
     if dataset == 'training':
         image_path = dir_path + 'training/rgb/*'
@@ -98,7 +99,7 @@ def create_image_dataset(dir_path, num_samples, dataset):
         img = tf.io.read_file(image_path)
         img = tf.image.decode_png(img, channels=3)
         img = tf.image.convert_image_dtype(img, tf.float32)
-        img = tf.image.resize(img, [224, 224])
+        img = tf.image.resize(img, [rows, cols])
         return img
 
     list_ds = list_ds.map(get_tfimage)
@@ -161,7 +162,7 @@ def benchmark(dataset, num_epochs=2):
 
 
 
-def tf_generator(dir_path, dataset,  batch_size=16, full_train=True):
+def tf_generator(dir_path, dataset,  batch_size=16, full_train=True, im_size=(224,224,3)):
     """ Create generator, right now seperate one for
         heatmaps and one to read images"""
     xyz_list, K_list, num_samples, s_list = get_raw_data(dir_path, dataset)
@@ -180,11 +181,13 @@ def tf_generator(dir_path, dataset,  batch_size=16, full_train=True):
             output_shapes=tf.TensorShape([21, 2]),
             args=[num_samples, xyz_list, K_list, s_list])
         dataset_label = dataset_uv.map(map_uv_to_hm_2, num_parallel_calls=tf.data.experimental.AUTOTUNE)
-    dataset_im = create_image_dataset(dir_path, num_samples, dataset)
+    dataset_im = create_image_dataset(dir_path, num_samples, dataset, im_size)
     dataset_out = tf.data.Dataset.zip((dataset_im, dataset_label))
     if dataset == 'training' or dataset == 'small_dataset':
      #   dataset_out = dataset_out.shuffle(num_samples, reshuffle_each_iteration=True)
-        dataset_out = dataset_out.map(augment, num_parallel_calls=tf.data.experimental.AUTOTUNE).repeat()
+        dataset_out = dataset_out.map(augment, num_parallel_calls=tf.data.experimental.AUTOTUNE)
+        dataset_out = dataset_out.shuffle(batch_size * 100, reshuffle_each_iteration=True).repeat()
+
     batched_dataset = dataset_out.batch(batch_size)
     return batched_dataset
 

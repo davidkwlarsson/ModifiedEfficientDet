@@ -109,25 +109,42 @@ def main():
 
     # 2D is pretrained so hm-loss is okay and can be trained together with 3D
     full_train = True
-    train_hm = False # 2D is pretrained
+    only_predict = False
+    train = True
 
-    traingen = tf_generator(dir_path, dataset, batch_size=batch_size, full_train=full_train)
-    validgen = tf_generator(dir_path, 'validation', batch_size=batch_size, full_train=full_train)
+    train_hm = False # 2D is pretrained
+    im_size = (56,56,3)
+    traingen = tf_generator(dir_path, dataset, batch_size=batch_size, full_train=full_train, im_size=im_size)
+    validgen = tf_generator(dir_path, 'validation', batch_size=batch_size, full_train=full_train, im_size=im_size)
 
     traingen = traingen.prefetch(batch_size)
     validgen = validgen.prefetch(batch_size)
 
-    model = efficientdet(phi, batch_size, weighted_bifpn=weighted_bifpn,
+    model = efficientdet(phi,im_size, batch_size, weighted_bifpn=weighted_bifpn,
                          freeze_bn=freeze_backbone, full_train=full_train)
 
     # freeze backbone layers FALSE NOW
     if freeze_backbone:
         for i in range(1, [227, 329, 329, 374, 464, 566, 656][phi]):
             model.layers[i].trainable = False
-    if full_train:
-        model.load_weights('hm_weights.h5', by_name=True)
+    if not train and full_train:
+        model.load_weights('xyz_weights_cp.h5', by_name=True)
+    if not train and not full_train:
+        if im_size==(224,224,3):
+            model.load_weights('hm_weights.h5', by_name=True)
+        elif im_size==(112,112,3):
+            model.load_weights('hm_weights_112.h5', by_name=True)
+        elif im_size==(56,56,3):
+            model.load_weights('hm_weights_56.h5', by_name=True)
 
-    train = True
+    elif full_train:
+        if im_size == (224, 224, 3):
+            model.load_weights('hm_weights.h5', by_name=True)
+        elif im_size == (112, 112, 3):
+            model.load_weights('hm_weights_112.h5', by_name=True)
+        elif im_size == (56, 56, 3):
+            model.load_weights('hm_weights_56.h5', by_name=True)
+
     if train:
         if full_train:
             losses = {"xyz": 'mse', "hm": weighted_bce}
@@ -144,7 +161,7 @@ def main():
                 verbose=1)
                 ]
             print("Compiling model ... \n")
-            model.compile(optimizer=Adam(lr=1e-3), loss=losses, loss_weights=lossWeights)
+            model.compile(optimizer=Adam(lr=1e-3), loss=losses, loss_weights=lossWeights, metrics=['accuracy'])
             print("Number of parameters in the model : ", model.count_params())
             print(model.summary())
             history = model.fit(traingen, validation_data = validgen, validation_steps = num_val_samp//batch_size
@@ -166,36 +183,47 @@ def main():
                 verbose=1),
             ]
             print("Compiling model ... \n")
-            model.compile(optimizer=Adam(lr=1e-3), loss=losses)
+            model.compile(optimizer=Adam(lr=1e-3), loss=losses, metrics=['accuracy'])
             print("Number of parameters in the model : ", model.count_params())
             print(model.summary())
 
             history = model.fit(traingen, validation_data=validgen, validation_steps=num_val_samp // batch_size
                                 , steps_per_epoch=num_train_samp // batch_size, epochs=nbr_epochs, verbose=1,
                                 callbacks=callbacks)
-            model.save_weights("hm_weights.h5")
+            model.save_weights("hm_weights_56.h5")
         save_loss(history)
         model.save('saved_model/my_model')
     else: # if not train
         if full_train:
             losses = {"xyz": 'mse', "hm": weighted_bce}
-            model.load_weights("xyz_weights.h5")
+            #model.load_weights("xyz_weights_cp.h5")
         else:
             losses = {"hm": weighted_bce}
-            model.load_weights("hm_weights.h5")
+            #model.load_weights("hm_weights.h5")
 
         model.compile(optimizer=Adam(lr=1e-3), loss=losses)
 
     save_result = True
 
     if save_result:
-        validgen2 = tf_generator(dir_path, 'validation', batch_size=batch_size, full_train=full_train)
+        validgen2 = tf_generator(dir_path, 'validation', batch_size=batch_size, full_train=full_train, im_size=im_size)
+        validgen3 = tf_generator(dir_path, 'test', batch_size=batch_size, full_train=full_train, im_size=im_size)
+
         preds = model.predict(validgen2, steps=None)
+        preds_test = model.predict(validgen3, steps=None)
 
-        np.savetxt('xyz_pred.csv', preds[0], delimiter=',')
-        np.savetxt('hm_pred.csv', np.reshape(preds[1][0:1000], (-1,56*56)), delimiter=',')
-        np.savetxt('uv_pred.csv', heatmaps_to_coord(preds[1]), delimiter=',')
+        if full_train:
+            np.savetxt('xyz_pred.csv', preds[0], delimiter=',')
+            np.savetxt('hm_pred.csv', np.reshape(preds[1][0:100], (-1,56*56)), delimiter=',')
+            np.savetxt('uv_pred.csv', heatmaps_to_coord(preds[1]), delimiter=',')
+            np.savetxt('xyz_pred_test.csv', preds_test[0], delimiter=',')
+            np.savetxt('hm_pred_test.csv', np.reshape(preds_test[1][0:100], (-1, 56 * 56)), delimiter=',')
+            np.savetxt('uv_pred_test.csv', heatmaps_to_coord(preds_test[1]), delimiter=',')
 
+        else:
+            #np.savetxt('hm_pred_m.csv', np.reshape(preds[0:1000], (-1, 56 * 56)), delimiter=',')
+            np.savetxt('uv_pred.csv', heatmaps_to_coord(preds), delimiter=',')
+            np.savetxt('uv_pred_test.csv', heatmaps_to_coord(preds_test), delimiter=',')
 
 
 if __name__ == '__main__':

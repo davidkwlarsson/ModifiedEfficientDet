@@ -308,7 +308,7 @@ if __name__ == '__main__':
             hm_val_loss.csv - heatmap validation loss
     '''
 
-    save3D = True
+    save3D = False
     save2D = True
     visualize_3d = False
 
@@ -316,8 +316,8 @@ if __name__ == '__main__':
     result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/3d/ED_50e_separated/'
     result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/3d/ED_50e_shuffled/'
     result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/3d/ED_50e_112/'
-    #result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/3d/MN_50e/'
-# result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/hm/ED_30e/'
+    result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/3d/MN_50e/'
+    #result_path = '/Users/Sofie/exjobb/ModifiedEfficientDet/results/hm/ED_30e_56/'
     try:
         opts, args = getopt.getopt(sys.argv[1:], "p:", ["path="])
     except getopt.GetoptError:
@@ -326,7 +326,7 @@ if __name__ == '__main__':
     for opt, arg in opts:
         if opt == '-p':
             result_path = str(arg)
-    version = 'hm'
+    version = 'uv'
     dir = 'images/'
     try:
         os.mkdir(os.path.join(result_path, dir))
