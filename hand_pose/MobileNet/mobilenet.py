@@ -33,9 +33,11 @@ def efficientdet_mobnet(phi, input_shape=(224, 224, 3), num_classes=20, weighted
     'block_16_project',      # 4x4
     ]
     feature_list = [backbone_cls.get_layer(name).output for name in layer_names]
+
     # feature_m = tf.keras.Model(inputs = backbone_cls.input, outputs = feature_list)
     # print(f_list) 
     weights = phi
+    # features = backbone_cls
     # features = backbone_cls(include_top=False, input_shape=input_shape, weights=weights)(image_input)
     # print(features)
 
@@ -46,9 +48,10 @@ def efficientdet_mobnet(phi, input_shape=(224, 224, 3), num_classes=20, weighted
     #     features = layers.Conv2D(64, kernel_size=3, strides=1, padding='same', activation='relu')(features)
     #     f_list.append(features)
 
-    # f_list.reverse()
+    # feature_list.reverse()
     # features = feature_m(image_input)
     features = feature_list
+    # features = f_list
     print(features)
     for feat in features:
         print(feat.shape)
@@ -61,11 +64,15 @@ def efficientdet_mobnet(phi, input_shape=(224, 224, 3), num_classes=20, weighted
         else:
             for i in range(d_bifpn):
                 features = build_BiFPN(features, w_bifpn, i, freeze_bn=freeze_bn)
+        # regress_head = build_regress_head(w_head, d_head)
+        print("shape of output from final BiFPN layer: ", features[0].shape, features[1].shape, features[2].shape)
 
-    # regress_head = build_regress_head(w_head, d_head)
-    print("shape of output from final BiFPN layer: ", features[0].shape, features[1].shape, features[2].shape)
+        feature3 = features[0]  ## OUTPUT SIZE OF 28,28,64 for freihand
+    else:
+        ind = int(input_shape[0]/112) #calculate the input which will be of 28x28
+        feature3 = features[ind]
+        print("shape before upsampling to heatmaps : ", feature3.shape)
 
-    feature3 = features[0]  ## OUTPUT SIZE OF 28,28,64 for freihand
     # feature2 = features[1]
 
     feature2 = layers.UpSampling2D()(feature3)  # from 28 -> 56
