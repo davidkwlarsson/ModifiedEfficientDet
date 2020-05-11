@@ -60,6 +60,44 @@ def get_session():
     config.gpu_options.allow_growth = True
     return tf.compat.v1.Session(config=config)
 
+def get_flops(model):
+    session = tf.compat.v1.Session()
+    graph = tf.compat.v1.get_default_graph()
+
+    with graph.as_default():
+        with session.as_default():
+            run_meta = tf.compat.v1.RunMetadata()
+            opts = tf.compat.v1.profiler.ProfileOptionBuilder.float_operation()
+
+            # Optional: save printed results to file
+            # flops_log_path = os.path.join(tempfile.gettempdir(), 'tf_flops_log.txt')
+            # opts['output'] = 'file:outfile={}'.format(flops_log_path)
+
+            # We use the Keras session graph in the call to the profiler.
+            flops = tf.compat.v1.profiler.profile(graph=graph,
+                                                  run_meta=run_meta, cmd='op', options=opts)
+
+            return flops.total_float_ops
+
+
+# Don't know if this is usefull in our case
+def get_flops_h5(model_h5_path):
+    session = tf.compat.v1.Session()
+    graph = tf.compat.v1.get_default_graph()
+        
+
+    with graph.as_default():
+        with session.as_default():
+            model = tf.keras.models.load_model(model_h5_path)
+
+            run_meta = tf.compat.v1.RunMetadata()
+            opts = tf.compat.v1.profiler.ProfileOptionBuilder.float_operation()
+        
+            # We use the Keras session graph in the call to the profiler.
+            flops = tf.compat.v1.profiler.profile(graph=graph,
+                                                  run_meta=run_meta, cmd='op', options=opts)
+        
+            return flops.total_float_ops
 
 def main():
     """Use: python3 train_ed.py -f PATH_TO_FREIHAND -e NBR_OF_EPOCHS -t training"""
@@ -75,10 +113,14 @@ def main():
     full_train = full_net
     include_bifpn = True
     ED = True
-    input_shape = (224,224,3)
+    input_shape = (512,512,3)
     im_size = input_shape
     batch_size = 16
 
+    print("full network: ", full_net)
+    print("efficientdet : ", ED)
+    print("include bifpn : ", include_bifpn)
+    print("input shape :" , input_shape)
 
     if ED:
         model = efficientdet(phi,im_size, batch_size, weighted_bifpn=weighted_bifpn,
@@ -111,6 +153,7 @@ def main():
         print("Number of parameters in the model : ", model.count_params())
         print(model.summary())
 
+    # get_flops(model)
 
 if __name__ == '__main__':
     tf.keras.backend.clear_session()
