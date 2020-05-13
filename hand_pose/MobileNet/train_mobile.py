@@ -134,34 +134,38 @@ def main():
     num_test_samp = int(tot_num_samp * 0.05)
 
     # 2D is pretrained so hm-loss is okay and can be trained together with 3D
-    full_train = False # if false only train hm part
+    full_train = True # if false only train hm part
     only_predict = False # Use existing weights
     include_bifpn = True
 
+    # Only true to run against only xyz for the full training
+    no_hm = True
+
     input_shape = (112,112,3)
 
-    traingen = tf_generator(dir_path, 'training', batch_size=batch_size, full_train=full_train, im_size = input_shape)
-    validgen = tf_generator(dir_path, 'validation', batch_size=batch_size, full_train=full_train, im_size = input_shape)
+    traingen = tf_generator(dir_path, 'training', batch_size=batch_size, full_train=full_train, im_size = input_shape, no_hm = no_hm)
+    validgen = tf_generator(dir_path, 'validation', batch_size=batch_size, full_train=full_train, im_size = input_shape, no_hm = no_hm)
 
     traingen = traingen.prefetch(batch_size)
     validgen = validgen.prefetch(batch_size)
 
-
+    print(traingen)
 
     # callback = tf.keras.callbacks.LearningRateScheduler(scheduler)
 
    # earlystop = tf.keras.callbacks.EarlyStopping(
    #     monitor='val_loss', min_delta=0, patience=5, verbose=0, mode='auto',
    #     baseline=None, restore_best_weights=True)
-  # print("Number of images: %s and heatmaps: %s\n" % (len(images), len(heatmaps)))
+   # print("Number of images: %s and heatmaps: %s\n" % (len(images), len(heatmaps)))
     model = efficientdet_mobnet(phi, input_shape=input_shape, weighted_bifpn=weighted_bifpn,
-                                freeze_bn=freeze_backbone, full_train=full_train, include_bifpn = include_bifpn)
+                                freeze_bn=freeze_backbone, full_train=full_train, include_bifpn = include_bifpn, no_hm = no_hm)
     if only_predict and full_train:
         model.load_weights('xyz_weights_mobnet_cp.h5', by_name=True)
     elif only_predict and not full_train:
         model.load_weights('hm_pre_train_mobnet.h5', by_name=True)
-    elif full_train: #load pre-trained weights
+    elif full_train and not no_hm: #load pre-trained weights
         model.load_weights('hm_pre_train_mobnet.h5', by_name=True)
+
     if only_predict and full_train:
         losses = {"xyz": 'mse', 'hm': weighted_bce}
         lossWeights = {"xyz": 1, 'hm': 1}
@@ -181,8 +185,12 @@ def main():
                       metrics = ['accuracy'],
                       )
     elif full_train:
-        losses = {"xyz": 'mse', 'hm': weighted_bce}
-        lossWeights = {"xyz": 1, 'hm': 1}
+        if no_hm:
+            losses = {"xyz": 'mse'}
+            lossWeights = {"xyz": 1}
+        else:
+            losses = {"xyz": 'mse', 'hm': weighted_bce}
+            lossWeights = {"xyz": 1, 'hm': 1}
         checkpoint = tf.keras.callbacks.ModelCheckpoint(
             filepath='xyz_weights_mobnet_cp.h5',
             # Path where to save the model
@@ -242,18 +250,19 @@ def main():
     
     save_result=True
     if save_result:
-        validgen2 = tf_generator(dir_path, 'validation', batch_size=batch_size, full_train=full_train, im_size=input_shape)
-        validgen3 = tf_generator(dir_path, 'test', batch_size=batch_size, full_train=full_train, im_size = input_shape)
+        validgen2 = tf_generator(dir_path, 'validation', batch_size=batch_size, full_train=full_train, im_size=input_shape, no_hm = no_hm)
+        validgen3 = tf_generator(dir_path, 'test', batch_size=batch_size, full_train=full_train, im_size = input_shape, no_hm = no_hm)
 
         preds = model.predict(validgen2, steps=None)
         preds_test = model.predict(validgen3, steps=None)
         if full_train:
             np.savetxt('xyz_pred.csv', preds[0], delimiter=',')
-            np.savetxt('hm_pred.csv', np.reshape(preds[1][0:100], (-1, 56 * 56)), delimiter=',')
-            np.savetxt('uv_pred.csv', heatmaps_to_coord(preds[1]), delimiter=',')
             np.savetxt('xyz_pred_test.csv', preds_test[0], delimiter=',')
-            np.savetxt('hm_pred_test.csv', np.reshape(preds_test[1][0:100], (-1, 56 * 56)), delimiter=',')
-            np.savetxt('uv_pred_test.csv', heatmaps_to_coord(preds_test[1]), delimiter=',')
+            if not no_hm:
+                np.savetxt('hm_pred.csv', np.reshape(preds[1][0:100], (-1, 56 * 56)), delimiter=',')
+                np.savetxt('uv_pred.csv', heatmaps_to_coord(preds[1]), delimiter=',')
+                np.savetxt('hm_pred_test.csv', np.reshape(preds_test[1][0:100], (-1, 56 * 56)), delimiter=',')
+                np.savetxt('uv_pred_test.csv', heatmaps_to_coord(preds_test[1]), delimiter=',')
 
         else:
             #np.savetxt('hm_pred_m.csv', np.reshape(preds[0:1000], (-1, 56 * 56)), delimiter=',')

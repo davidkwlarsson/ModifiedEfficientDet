@@ -11,7 +11,7 @@ from EfficientDet.network import *
 from utils import inject_tfkeras_modules
 
 
-def efficientdet_mobnet(phi, input_shape=(224, 224, 3), num_classes=20, weighted_bifpn=False, freeze_bn=False, score_threshold=0.01, full_train=True, include_bifpn = True):
+def efficientdet_mobnet(phi, input_shape=(224, 224, 3), num_classes=20, weighted_bifpn=False, freeze_bn=False, score_threshold=0.01, full_train=True, include_bifpn = True, no_hm = False):
     assert phi in range(7)
     #input_size = image_sizes[phi]
     # input_shape = (input_size, input_size, 3)
@@ -79,7 +79,10 @@ def efficientdet_mobnet(phi, input_shape=(224, 224, 3), num_classes=20, weighted
     # feature2_cont = layers.Conv2D(21, kernel_size = 3, strides = 1, padding = "same", activation = 'relu')(feature2)
     feature2 = layers.Conv2D(21, kernel_size=3, strides=1, padding="same", activation='relu')(feature2)
     # feature2 = layers.Dropout(0.2)(feature2)
-    hm = layers.Conv2D(21, kernel_size=1, strides=1, padding="same", activation='sigmoid', name='hm')(feature2)
+    if no_hm:
+        hm = layers.Conv2D(21, kernel_size=1, strides=1, padding="same", activation='sigmoid')(feature2)
+    else:
+        hm = layers.Conv2D(21, kernel_size=1, strides=1, padding="same", activation='sigmoid', name='hm')(feature2)
     # feature2 = layers.UpSampling2D()(feature2) # from 56 -> 112
     # feature2 = layers.UpSampling2D()(feature2) # from 112 -> 224
     if full_train:
@@ -94,8 +97,10 @@ def efficientdet_mobnet(phi, input_shape=(224, 224, 3), num_classes=20, weighted
         in_pose = layers.Concatenate()([feat, hm_small])
        # in_pose = feat
         xyz = liftpose(in_pose, output_shape)
-
-        model = models.Model(inputs=[image_input], outputs=[xyz, hm])
+        if no_hm:
+            model = models.Model(inputs=[image_input], outputs=[xyz])
+        else:
+            model = models.Model(inputs=[image_input], outputs=[xyz, hm])
     else:
         model = models.Model(inputs=[image_input], outputs=[hm])
 
